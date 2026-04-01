@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useProducts } from '../context/ProductContext';
-import { Plus, Trash2, Edit2, LayoutDashboard, ChevronRight, Package } from 'lucide-react';
+import { Plus, Trash2, Edit2, LayoutDashboard, Package } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const Sidebar: React.FC = () => {
@@ -40,11 +40,13 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="w-64 bg-slate-900 text-white h-screen flex flex-col border-r border-slate-800">
-      <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-        <div className="bg-blue-600 p-2 rounded-lg">
-          <LayoutDashboard size={20} />
-        </div>
-        <h1 className="font-bold text-lg tracking-tight">BCH Product Monitor</h1>
+      <div className="flex items-center gap-3 border-b border-slate-800 p-5">
+        <img
+          src="/images/B.png"
+          alt="Bangkok Hospital Chanthaburi"
+          className="h-12 w-12 shrink-0 object-contain"
+        />
+        <h1 className="text-lg font-bold tracking-tight text-white">BCH Product Monitor</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">

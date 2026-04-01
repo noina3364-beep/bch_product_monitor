@@ -1,7 +1,7 @@
 import React from 'react';
 import { useProducts } from '../context/ProductContext';
 import { formatNumber, formatPercent, cn } from '../lib/utils';
-import { Target, Users, TrendingUp, Package } from 'lucide-react';
+import { Users, TrendingUp, Package } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   const { products, globalTargets, updateGlobalTargets } = useProducts();
@@ -70,10 +70,9 @@ export const Dashboard: React.FC = () => {
           {/* Logo Area */}
           <div className="flex items-center justify-center pr-6">
             <img 
-              src="https://ais-dev-xsxzqrsimm5p2anuzihmuz-659403674095.asia-east1.run.app/attachments/659403674095/xsxzqrsimm5p2anuzihmuz/logo.png" 
+              src="/images/Chan.png" 
               alt="Bangkok Hospital Chanthaburi" 
               className="h-16 w-full object-contain"
-              referrerPolicy="no-referrer"
             />
           </div>
 
