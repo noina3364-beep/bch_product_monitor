@@ -44,7 +44,7 @@ export const Sidebar: React.FC = () => {
         <div className="bg-blue-600 p-2 rounded-lg">
           <LayoutDashboard size={20} />
         </div>
-        <h1 className="font-bold text-lg tracking-tight">Monitor X</h1>
+        <h1 className="font-bold text-lg tracking-tight">BCH Product Monitor</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
@@ -134,16 +134,6 @@ export const Sidebar: React.FC = () => {
             <span>Add Product</span>
           </button>
         )}
-      </div>
-
-      <div className="p-4 border-t border-slate-800">
-        <div className="bg-slate-800/50 rounded-xl p-4">
-          <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest mb-1">Status</p>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-medium text-slate-300">System Live</span>
-          </div>
-        </div>
       </div>
     </div>
   );
