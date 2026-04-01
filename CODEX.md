@@ -5,33 +5,43 @@ This file gives Codex and other coding agents the minimum project context needed
 ## Project Overview
 
 - Project name: BCH Product Monitor
-- Stack: Vite, React 19, TypeScript, Tailwind CSS v4, Lucide icons
+- Stack: Vite, React 19, TypeScript, Tailwind CSS v4, Express, Prisma, SQLite, Lucide icons
 - App shape: single-page dashboard for monitoring products, funnels, channels, visits, and revenue
-- State model: client-side only, centered in `src/context/ProductContext.tsx`
-- Data source today: mock data from `src/data/mockData.ts`
+- Frontend state model: `src/context/ProductContext.tsx` hydrates from the backend API and keeps the UI in sync
+- Backend: Express API in `server/src` with Prisma schema in `prisma/schema.prisma`
+- Persistence: SQLite database at `prisma/dev.db`
 - Deployment origin: this repo appears to be exported from Google AI Studio
 
 ## Useful Commands
 
 - Install dependencies: `npm install`
-- Start local dev server: `npm run dev`
+- Start frontend dev server: `npm run dev`
+- Start backend dev server: `npm run dev:server`
 - Type-check: `npm run lint`
 - Production build: `npm run build`
 - Preview build: `npm run preview`
+- Generate Prisma client: `npm run prisma:generate`
+- Apply Prisma schema to SQLite: `npm run prisma:push`
+- Seed database: `npm run prisma:seed`
 
 Notes:
 
 - `npm run lint` runs `tsc --noEmit`; there is no ESLint setup in this repo yet.
-- `npm run clean` uses `rm -rf dist`, which is POSIX-style and may not work in a plain Windows shell.
+- `npm run clean` removes both `dist` and `build` with a Node-based script.
+- `npm run prisma:push` uses `prisma/push.ts` rather than `prisma db push` directly because that is more reliable in this Windows environment.
 
 ## Environment
 
 Expected environment variables are documented in `.env.example`:
 
+- `DATABASE_URL`
+- `PORT`
+- `CLIENT_ORIGIN`
+- `VITE_API_BASE_URL`
 - `GEMINI_API_KEY`
 - `APP_URL`
 
-For local work, follow the README and place the needed values in `.env.local` if required.
+For local work, follow the README and place the needed values in `.env` or `.env.local`.
 
 ## Architecture
 
@@ -50,9 +60,17 @@ For local work, follow the README and place the needed values in `.env.local` if
 - `products`
 - `activeProduct`
 - `globalTargets`
-- all mutations for products, funnels, channels, and cell values
+- frontend loading/error state
+- API-backed mutations for products, funnels, channels, and cell values
 
-When changing data behavior, update the provider first and keep components thin.
+When changing frontend data behavior, update the provider first and keep components thin.
+
+### Backend flow
+
+- `server/src/index.ts` exposes REST endpoints under `/api`
+- `server/src/data.ts` contains the main mapping and mutation helpers
+- Prisma models live in `prisma/schema.prisma`
+- Seed data lives in `prisma/seed-data.ts`
 
 ### Data model
 
@@ -68,10 +86,13 @@ Important shape:
 
 ## Implementation Notes
 
-- Preserve immutable updates in `ProductContext`; nested updates are easy to break.
+- Keep the frontend product shape aligned with the backend DTO shape returned by `/api/products/:productId/dashboard`.
 - Keep `newChannels` and `existingChannels` structurally in sync when adding or removing funnels/channels.
 - `activeProduct === null` is meaningful UI state and should continue to show the overview dashboard.
-- The app currently has no persistence layer. Do not assume backend storage exists unless you add it intentionally.
+- Most frontend updates are optimistic and then reconciled with the server response; avoid changing response shapes casually.
+- Local images live in `public/images/`.
+  - Sidebar logo: `public/images/B.png`
+  - Dashboard logo: `public/images/Chan.png`
 - Styling is utility-first Tailwind directly in components; match the existing visual language unless the task is a deliberate redesign.
 
 ## Files To Check Before Major Changes
@@ -80,19 +101,22 @@ Important shape:
 - `src/components/Dashboard.tsx`
 - `src/components/MonitoringTable.tsx`
 - `src/components/Sidebar.tsx`
+- `src/lib/api.ts`
 - `src/types/index.ts`
-- `src/data/mockData.ts`
+- `server/src/index.ts`
+- `server/src/data.ts`
+- `prisma/schema.prisma`
 
 ## Agent Working Agreement
 
 - Prefer small, localized changes over broad rewrites.
 - Verify with `npm run lint` after meaningful TypeScript changes.
 - Run `npm run build` when changes could affect bundling or runtime behavior.
-- If you change the data model, update types and all context mutations together.
+- If you change the API or data model, update Prisma schema, backend DTO mapping, and frontend context expectations together.
 - If you add persistence or API calls, document the new flow in `README.md` and this file.
 
 ## Known Gaps
 
 - No automated tests are present.
-- No backend or database is wired in the current code.
-- README is still mostly the default AI Studio export and may lag behind the actual product behavior.
+- Some local dev commands need to run outside the sandbox because Vite/esbuild and SQLite writes can be restricted here.
+- README may still lag behind product-specific UX decisions if the app changes quickly.
