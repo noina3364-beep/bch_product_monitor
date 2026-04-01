@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { Product, CategoryType, FunnelStage, Channel } from '../types';
-import { MOCK_PRODUCTS } from '../data/mockData';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Product, CategoryType } from '../types';
+import { apiRequest } from '../lib/api';
 
 interface GlobalTargets {
   revenue: number;
@@ -12,6 +12,9 @@ interface ProductContextType {
   products: Product[];
   activeProduct: Product | null;
   globalTargets: GlobalTargets;
+  isLoading: boolean;
+  error: string | null;
+  dismissError: () => void;
   updateGlobalTargets: (targets: Partial<GlobalTargets>) => void;
   setActiveProductById: (id: string | null) => void;
   addProduct: (name: string) => void;
@@ -36,189 +39,381 @@ interface ProductContextType {
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
 
+interface ProductResponse {
+  product: Product;
+}
+
+interface ProductSummary {
+  id: string;
+  name: string;
+}
+
+interface ProductsResponse {
+  products: ProductSummary[];
+}
+
+interface DashboardTargetsResponse {
+  globalTargets: GlobalTargets;
+}
+
 export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [globalTargets, setGlobalTargets] = useState<GlobalTargets>({
     revenue: 1000000,
     newCustomers: 50000,
     existingCustomers: 100000,
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const productMutationVersions = useRef<Record<string, number>>({});
+  const targetMutationVersion = useRef(0);
 
   const activeProduct = products.find((p) => p.id === activeProductId) || null;
+
+  const dismissError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const handleError = useCallback((error: unknown) => {
+    console.error(error);
+    setError(error instanceof Error ? error.message : 'Something went wrong');
+  }, []);
+
+  const replaceProduct = useCallback((nextProduct: Product) => {
+    setProducts((prev) => {
+      const existingIndex = prev.findIndex((product) => product.id === nextProduct.id);
+
+      if (existingIndex === -1) {
+        return [...prev, nextProduct];
+      }
+
+      const nextProducts = [...prev];
+      nextProducts[existingIndex] = nextProduct;
+      return nextProducts;
+    });
+  }, []);
+
+  const fetchProduct = useCallback(async (productId: string) => {
+    const response = await apiRequest<ProductResponse>(`/products/${productId}/dashboard`);
+    return response.product;
+  }, []);
+
+  const reloadProduct = useCallback(
+    async (productId: string) => {
+      try {
+        const product = await fetchProduct(productId);
+        replaceProduct(product);
+      } catch (error) {
+        handleError(error);
+      }
+    },
+    [fetchProduct, handleError, replaceProduct],
+  );
+
+  const reloadGlobalTargets = useCallback(async () => {
+    try {
+      const response = await apiRequest<DashboardTargetsResponse>('/targets/dashboard');
+      setGlobalTargets(response.globalTargets);
+    } catch (error) {
+      handleError(error);
+    }
+  }, [handleError]);
+
+  const loadProducts = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const [targetsResponse, productsResponse] = await Promise.all([
+        apiRequest<DashboardTargetsResponse>('/targets/dashboard'),
+        apiRequest<ProductsResponse>('/products'),
+      ]);
+
+      const nextProducts = await Promise.all(
+        productsResponse.products.map(async (product) => fetchProduct(product.id)),
+      );
+
+      setProducts(nextProducts);
+      setGlobalTargets(targetsResponse.globalTargets);
+      setActiveProductId((current) =>
+        current && nextProducts.some((product) => product.id === current) ? current : null,
+      );
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchProduct, handleError]);
+
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
+
+  const nextProductVersion = useCallback((productId: string) => {
+    const nextVersion = (productMutationVersions.current[productId] ?? 0) + 1;
+    productMutationVersions.current[productId] = nextVersion;
+    return nextVersion;
+  }, []);
+
+  const isLatestProductVersion = useCallback((productId: string, version: number) => {
+    return productMutationVersions.current[productId] === version;
+  }, []);
+
+  const applyOptimisticProductUpdate = useCallback(
+    (productId: string, updater: (product: Product) => Product) => {
+      setProducts((prev) =>
+        prev.map((product) => (product.id === productId ? updater(product) : product)),
+      );
+    },
+    [],
+  );
+
+  const runProductMutation = useCallback(
+    (
+      productId: string,
+      optimisticUpdater: (product: Product) => Product,
+      request: () => Promise<ProductResponse>,
+    ) => {
+      setError(null);
+      applyOptimisticProductUpdate(productId, optimisticUpdater);
+      const version = nextProductVersion(productId);
+
+      void request()
+        .then((response) => {
+          if (isLatestProductVersion(productId, version)) {
+            replaceProduct(response.product);
+          }
+        })
+        .catch((error) => {
+          if (isLatestProductVersion(productId, version)) {
+            void reloadProduct(productId);
+          }
+          handleError(error);
+        });
+    },
+    [
+      applyOptimisticProductUpdate,
+      handleError,
+      isLatestProductVersion,
+      nextProductVersion,
+      reloadProduct,
+      replaceProduct,
+    ],
+  );
 
   const setActiveProductById = useCallback((id: string | null) => {
     setActiveProductId(id);
   }, []);
 
   const updateGlobalTargets = useCallback((targets: Partial<GlobalTargets>) => {
+    setError(null);
+    targetMutationVersion.current += 1;
+    const version = targetMutationVersion.current;
+
     setGlobalTargets((prev) => ({ ...prev, ...targets }));
-  }, []);
+
+    void apiRequest<DashboardTargetsResponse>('/targets/dashboard', {
+      method: 'PATCH',
+      body: JSON.stringify(targets),
+    })
+      .then((response) => {
+        if (targetMutationVersion.current === version) {
+          setGlobalTargets(response.globalTargets);
+        }
+      })
+      .catch((error) => {
+        if (targetMutationVersion.current === version) {
+          void reloadGlobalTargets();
+        }
+        handleError(error);
+      });
+  }, [handleError, reloadGlobalTargets]);
 
   const addProduct = useCallback((name: string) => {
-    const newProduct: Product = {
-      id: Math.random().toString(36).substr(2, 9),
-      name,
-      funnels: [{ id: 'f1', name: 'Funnel 1', target: 0 }],
-      channels: [{ id: 'c1', name: 'Channel 1' }],
-      data: {
-        newChannels: { f1: { c1: { visits: 0, revenue: 0 } } },
-        existingChannels: { f1: { c1: { visits: 0, revenue: 0 } } },
-      },
-    };
-    setProducts((prev) => [...prev, newProduct]);
-    setActiveProductId(newProduct.id);
-  }, []);
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    setError(null);
+
+    void apiRequest<ProductResponse>('/products', {
+      method: 'POST',
+      body: JSON.stringify({ name: trimmedName }),
+    })
+      .then((response) => {
+        replaceProduct(response.product);
+        setActiveProductId(response.product.id);
+      })
+      .catch(handleError);
+  }, [handleError, replaceProduct]);
 
   const updateProductName = useCallback((id: string, name: string) => {
-    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
-  }, []);
+    runProductMutation(
+      id,
+      (product) => ({ ...product, name }),
+      () =>
+        apiRequest<ProductResponse>(`/products/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name }),
+        }),
+    );
+  }, [runProductMutation]);
 
   const deleteProduct = useCallback((id: string) => {
-    setProducts((prev) => {
-      const filtered = prev.filter((p) => p.id !== id);
-      if (activeProductId === id && filtered.length > 0) {
-        setActiveProductId(filtered[0].id);
-      }
-      return filtered;
-    });
-  }, [activeProductId]);
+    setError(null);
+
+    void apiRequest<void>(`/products/${id}`, {
+      method: 'DELETE',
+    })
+      .then(() => {
+        setProducts((prev) => {
+          const filtered = prev.filter((product) => product.id !== id);
+          setActiveProductId((current) => {
+            if (current !== id) return current;
+            return filtered[0]?.id ?? null;
+          });
+          return filtered;
+        });
+      })
+      .catch(handleError);
+  }, [handleError]);
 
   const updateCellData = useCallback(
     (productId: string, category: CategoryType, funnelId: string, channelId: string, field: 'visits' | 'revenue', value: number) => {
-      setProducts((prev) =>
-        prev.map((p) => {
-          if (p.id !== productId) return p;
-          const newData = { ...p.data };
-          const categoryData = { ...newData[category] };
-          const funnelData = categoryData[funnelId] ? { ...categoryData[funnelId] } : {};
-          const channelData = funnelData[channelId] ? { ...funnelData[channelId] } : { visits: 0, revenue: 0 };
-          
-          channelData[field] = value;
-          funnelData[channelId] = channelData;
-          categoryData[funnelId] = funnelData;
-          newData[category] = categoryData;
+      runProductMutation(
+        productId,
+        (product) => {
+          const nextCategory = { ...product.data[category] };
+          const nextFunnel = nextCategory[funnelId] ? { ...nextCategory[funnelId] } : {};
+          const nextChannel = nextFunnel[channelId]
+            ? { ...nextFunnel[channelId] }
+            : { visits: 0, revenue: 0 };
 
-          return { ...p, data: newData };
-        })
+          nextChannel[field] = value;
+          nextFunnel[channelId] = nextChannel;
+          nextCategory[funnelId] = nextFunnel;
+
+          return {
+            ...product,
+            data: {
+              ...product.data,
+              [category]: nextCategory,
+            },
+          };
+        },
+        () =>
+          apiRequest<ProductResponse>(
+            `/products/${productId}/input-values/${category}/${funnelId}/${channelId}`,
+            {
+              method: 'PATCH',
+              body: JSON.stringify({ [field]: value }),
+            },
+          ),
       );
     },
-    []
+    [runProductMutation]
   );
 
   const updateFunnelTarget = useCallback((productId: string, funnelId: string, value: number) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        return {
-          ...p,
-          funnels: p.funnels.map((f) => (f.id === funnelId ? { ...f, target: value } : f)),
-        };
-      })
+    runProductMutation(
+      productId,
+      (product) => ({
+        ...product,
+        funnels: product.funnels.map((funnel) =>
+          funnel.id === funnelId ? { ...funnel, target: value } : funnel,
+        ),
+      }),
+      () =>
+        apiRequest<ProductResponse>(`/products/${productId}/funnels/${funnelId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ target: value }),
+        }),
     );
-  }, []);
+  }, [runProductMutation]);
 
   const addFunnel = useCallback((productId: string, name: string) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        if (p.funnels.length >= 10) return p;
-        const id = 'f' + (p.funnels.length + 1) + Math.random().toString(36).substr(2, 4);
-        const newFunnel: FunnelStage = { id, name, target: 0 };
-        
-        const newData = { ...p.data };
-        p.channels.forEach(c => {
-          if (!newData.newChannels[id]) newData.newChannels[id] = {};
-          if (!newData.existingChannels[id]) newData.existingChannels[id] = {};
-          newData.newChannels[id][c.id] = { visits: 0, revenue: 0 };
-          newData.existingChannels[id][c.id] = { visits: 0, revenue: 0 };
-        });
+    setError(null);
 
-        return { ...p, funnels: [...p.funnels, newFunnel], data: newData };
+    void apiRequest<ProductResponse>(`/products/${productId}/funnels`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+      .then((response) => {
+        replaceProduct(response.product);
       })
-    );
-  }, []);
+      .catch(handleError);
+  }, [handleError, replaceProduct]);
 
   const removeFunnel = useCallback((productId: string, funnelId: string) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        if (p.funnels.length <= 1) return p;
-        const newData = { ...p.data };
-        delete newData.newChannels[funnelId];
-        delete newData.existingChannels[funnelId];
-        return {
-          ...p,
-          funnels: p.funnels.filter((f) => f.id !== funnelId),
-          data: newData,
-        };
+    setError(null);
+
+    void apiRequest<ProductResponse>(`/products/${productId}/funnels/${funnelId}`, {
+      method: 'DELETE',
+    })
+      .then((response) => {
+        replaceProduct(response.product);
       })
-    );
-  }, []);
+      .catch(handleError);
+  }, [handleError, replaceProduct]);
 
   const updateFunnelName = useCallback((productId: string, funnelId: string, name: string) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        return {
-          ...p,
-          funnels: p.funnels.map((f) => (f.id === funnelId ? { ...f, name } : f)),
-        };
-      })
+    runProductMutation(
+      productId,
+      (product) => ({
+        ...product,
+        funnels: product.funnels.map((funnel) =>
+          funnel.id === funnelId ? { ...funnel, name } : funnel,
+        ),
+      }),
+      () =>
+        apiRequest<ProductResponse>(`/products/${productId}/funnels/${funnelId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name }),
+        }),
     );
-  }, []);
+  }, [runProductMutation]);
 
   const addChannel = useCallback((productId: string, name: string) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        if (p.channels.length >= 10) return p;
-        const id = 'c' + (p.channels.length + 1) + Math.random().toString(36).substr(2, 4);
-        const newChannel: Channel = { id, name };
-        
-        const newData = { ...p.data };
-        p.funnels.forEach(f => {
-          if (!newData.newChannels[f.id]) newData.newChannels[f.id] = {};
-          if (!newData.existingChannels[f.id]) newData.existingChannels[f.id] = {};
-          newData.newChannels[f.id][id] = { visits: 0, revenue: 0 };
-          newData.existingChannels[f.id][id] = { visits: 0, revenue: 0 };
-        });
+    setError(null);
 
-        return { ...p, channels: [...p.channels, newChannel], data: newData };
+    void apiRequest<ProductResponse>(`/products/${productId}/channels`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+      .then((response) => {
+        replaceProduct(response.product);
       })
-    );
-  }, []);
+      .catch(handleError);
+  }, [handleError, replaceProduct]);
 
   const removeChannel = useCallback((productId: string, channelId: string) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        if (p.channels.length <= 1) return p;
-        const newData = { ...p.data };
-        p.funnels.forEach(f => {
-          delete newData.newChannels[f.id][channelId];
-          delete newData.existingChannels[f.id][channelId];
-        });
-        return {
-          ...p,
-          channels: p.channels.filter((c) => c.id !== channelId),
-          data: newData,
-        };
+    setError(null);
+
+    void apiRequest<ProductResponse>(`/products/${productId}/channels/${channelId}`, {
+      method: 'DELETE',
+    })
+      .then((response) => {
+        replaceProduct(response.product);
       })
-    );
-  }, []);
+      .catch(handleError);
+  }, [handleError, replaceProduct]);
 
   const updateChannelName = useCallback((productId: string, channelId: string, name: string) => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== productId) return p;
-        return {
-          ...p,
-          channels: p.channels.map((c) => (c.id === channelId ? { ...c, name } : c)),
-        };
-      })
+    runProductMutation(
+      productId,
+      (product) => ({
+        ...product,
+        channels: product.channels.map((channel) =>
+          channel.id === channelId ? { ...channel, name } : channel,
+        ),
+      }),
+      () =>
+        apiRequest<ProductResponse>(`/products/${productId}/channels/${channelId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name }),
+        }),
     );
-  }, []);
+  }, [runProductMutation]);
 
   return (
     <ProductContext.Provider
@@ -226,6 +421,9 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
         products,
         activeProduct,
         globalTargets,
+        isLoading,
+        error,
+        dismissError,
         updateGlobalTargets,
         setActiveProductById,
         addProduct,

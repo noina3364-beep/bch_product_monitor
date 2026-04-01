@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  newChannels
+  existingChannels
+}
+
+model Product {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  funnels     Funnel[]
+  channels    Channel[]
+  inputValues InputValue[]
+
+  @@map("products")
+}
+
+model Funnel {
+  id          String       @id @default(cuid())
+  productId   String
+  name        String
+  position    Int
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  target      FunnelTarget?
+  inputValues InputValue[]
+
+  @@unique([productId, position])
+  @@map("funnels")
+}
+
+model FunnelTarget {
+  id           String   @id @default(cuid())
+  funnelId     String   @unique
+  targetVisits Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  funnel       Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  @@map("funnel_targets")
+}
+
+model Channel {
+  id          String       @id @default(cuid())
+  productId   String
+  name        String
+  position    Int
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inputValues InputValue[]
+
+  @@unique([productId, position])
+  @@map("channels")
+}
+
+model DashboardTarget {
+  id                      Int      @id
+  revenueTarget           Int
+  newCustomersTarget      Int
+  existingCustomersTarget Int
+  updatedAt               DateTime @updatedAt
+
+  @@map("dashboard_targets")
+}
+
+model InputValue {
+  id         String   @id @default(cuid())
+  productId  String
+  funnelId   String
+  channelId  String
+  category   Category
+  visits     Int
+  revenue    Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  funnel     Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  channel    Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, category, funnelId, channelId])
+  @@map("input_values")
+}
