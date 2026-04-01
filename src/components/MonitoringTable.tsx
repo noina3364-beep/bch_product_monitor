@@ -37,8 +37,16 @@ export const MonitoringTable: React.FC = () => {
     return { visits, revenue };
   };
 
-  const getConversionRate = (category: CategoryType, currentFunnelIdx: number) => {
+  const getConversionRate = (category: CategoryType, currentFunnelIdx: number, channelId?: string) => {
     if (currentFunnelIdx === 0) return null;
+    
+    if (channelId) {
+      const current = data[category][funnels[currentFunnelIdx].id]?.[channelId]?.visits || 0;
+      const previous = data[category][funnels[currentFunnelIdx - 1].id]?.[channelId]?.visits || 0;
+      if (previous === 0) return 0;
+      return current / previous;
+    }
+
     const current = getFunnelTotals(category, funnels[currentFunnelIdx].id);
     const previous = getFunnelTotals(category, funnels[currentFunnelIdx - 1].id);
     if (previous.visits === 0) return 0;
@@ -176,18 +184,8 @@ export const MonitoringTable: React.FC = () => {
                         <div className="grid grid-cols-2 gap-2">
                           <div className="flex flex-col">
                             <span className="text-[8px] font-bold text-slate-500 uppercase">Visits / Target</span>
-                            <div className="flex items-baseline gap-2">
+                            <div className="flex items-baseline gap-1">
                               <span className="text-base font-bold">{formatNumber(totals.visits)}</span>
-                              {funnel.target > 0 && (
-                                <span className={cn(
-                                  "text-[10px] font-bold px-1 py-0.5 rounded",
-                                  totals.visits >= funnel.target 
-                                    ? "bg-emerald-500/20 text-emerald-400" 
-                                    : "bg-red-500/20 text-red-400"
-                                )}>
-                                  {formatPercent((totals.visits - funnel.target) / funnel.target)}
-                                </span>
-                              )}
                               <span className="text-[11px] text-slate-400">/ {formatNumber(funnel.target)}</span>
                             </div>
                           </div>
@@ -248,7 +246,7 @@ export const MonitoringTable: React.FC = () => {
                 {/* Funnel Data Cells */}
                 {funnels.map((funnel, idx) => {
                   const cellData = data[activeCategory][funnel.id]?.[channel.id] || { visits: 0, revenue: 0 };
-                  const convRate = getConversionRate(activeCategory, idx);
+                  const convRate = getConversionRate(activeCategory, idx, channel.id);
 
                   return (
                     <React.Fragment key={`${channel.id}-${funnel.id}`}>
