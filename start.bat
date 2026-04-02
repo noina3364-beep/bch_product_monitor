@@ -3,6 +3,22 @@ setlocal
 
 cd /d "%~dp0"
 
+set "DB_FILE=%CD%\prisma\dev.db"
+set "NEEDS_SEED="
+if not exist "%DB_FILE%" set "NEEDS_SEED=1"
+
+echo Applying database schema...
+call npm run prisma:push
+if errorlevel 1 goto :error
+
+if defined NEEDS_SEED (
+  echo.
+  echo Seeding first-time database...
+  call npm run prisma:seed
+  if errorlevel 1 goto :error
+)
+
+echo.
 set "RUN_DIR=%CD%\.run"
 if not exist "%RUN_DIR%" mkdir "%RUN_DIR%"
 
@@ -17,6 +33,11 @@ echo Frontend: http://127.0.0.1:3000
 echo Backend:  http://127.0.0.1:3001
 echo Use stop.bat to stop both processes.
 exit /b 0
+
+:error
+echo.
+echo Start failed.
+exit /b 1
 
 :start_process
 set "NAME=%~1"
