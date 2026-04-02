@@ -8,3 +8,6 @@ coverage/
 !.env.example
 prisma/*.db
 prisma/*.db-journal
+.run/
+*.out.log
+*.err.log
