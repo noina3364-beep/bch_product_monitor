@@ -8,10 +8,10 @@ export const PRODUCT_SEED = [
   {
     name: 'Premium Subscription',
     funnels: [
-      { name: 'Awareness', target: 10_000 },
-      { name: 'Consideration', target: 5_000 },
-      { name: 'Conversion', target: 1_000 },
-      { name: 'Retention', target: 800 },
+      { name: 'Awareness', targets: { newChannels: 10_000, existingChannels: 10_000 } },
+      { name: 'Consideration', targets: { newChannels: 5_000, existingChannels: 5_000 } },
+      { name: 'Conversion', targets: { newChannels: 1_000, existingChannels: 1_000 } },
+      { name: 'Retention', targets: { newChannels: 800, existingChannels: 800 } },
     ],
     channels: [
       { name: 'Google Ads' },

@@ -108,7 +108,11 @@ export function mapProduct(product: ProductGraph): ProductDto {
     funnels: product.funnels.map((funnel) => ({
       id: funnel.id,
       name: funnel.name,
-      target: funnel.target?.targetVisits ?? 0,
+      targets: {
+        newChannels: funnel.target?.newTargetVisits ?? funnel.target?.targetVisits ?? 0,
+        existingChannels:
+          funnel.target?.existingTargetVisits ?? funnel.target?.targetVisits ?? 0,
+      },
     })),
     channels: product.channels.map((channel) => ({
       id: channel.id,
@@ -206,6 +210,8 @@ export async function createProduct(db: DbClient, name: string) {
     data: {
       funnelId: funnel.id,
       targetVisits: 0,
+      newTargetVisits: 0,
+      existingTargetVisits: 0,
     },
   });
 
@@ -264,6 +270,8 @@ export async function addFunnel(db: DbClient, productId: string, name: string) {
     data: {
       funnelId: funnel.id,
       targetVisits: 0,
+      newTargetVisits: 0,
+      existingTargetVisits: 0,
     },
   });
 

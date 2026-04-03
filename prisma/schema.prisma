@@ -40,12 +40,14 @@ model Funnel {
 }
 
 model FunnelTarget {
-  id           String   @id @default(cuid())
-  funnelId     String   @unique
-  targetVisits Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  funnel       Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  funnelId             String   @unique
+  targetVisits         Int
+  newTargetVisits      Int?
+  existingTargetVisits Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  funnel               Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
 
   @@map("funnel_targets")
 }

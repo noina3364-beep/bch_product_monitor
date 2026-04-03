@@ -1,7 +1,14 @@
+export type CategoryType = 'newChannels' | 'existingChannels';
+
+export interface FunnelTargets {
+  newChannels: number;
+  existingChannels: number;
+}
+
 export interface FunnelStage {
   id: string;
   name: string;
-  target: number;
+  targets: FunnelTargets;
 }
 
 export interface ChannelData {
@@ -30,5 +37,3 @@ export interface Product {
     existingChannels: ProductData;
   };
 }
-
-export type CategoryType = 'newChannels' | 'existingChannels';

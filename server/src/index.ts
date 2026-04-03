@@ -212,6 +212,9 @@ app.patch('/api/products/:productId/funnels/:funnelId', async (request, response
           target: {
             select: {
               id: true,
+              targetVisits: true,
+              newTargetVisits: true,
+              existingTargetVisits: true,
             },
           },
         },
@@ -229,16 +232,20 @@ app.patch('/api/products/:productId/funnels/:funnelId', async (request, response
       }
 
       if (body.target !== undefined) {
+        const targetField =
+          body.category === 'newChannels' ? 'newTargetVisits' : 'existingTargetVisits';
+
         if (existing.target) {
           await tx.funnelTarget.update({
             where: { funnelId: params.funnelId },
-            data: { targetVisits: body.target },
+            data: { [targetField]: body.target },
           });
         } else {
           await tx.funnelTarget.create({
             data: {
               funnelId: params.funnelId!,
               targetVisits: body.target,
+              [targetField]: body.target,
             },
           });
         }

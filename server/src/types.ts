@@ -6,7 +6,7 @@ export interface ProductDto {
   funnels: Array<{
     id: string;
     name: string;
-    target: number;
+    targets: Record<CategoryValue, number>;
   }>;
   channels: Array<{
     id: string;

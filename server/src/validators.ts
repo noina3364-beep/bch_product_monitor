@@ -39,10 +39,15 @@ export const createFunnelSchema = z.object({
 export const updateFunnelSchema = z
   .object({
     name: trimmedName.optional(),
+    category: z.enum(CATEGORY_VALUES).optional(),
     target: nonNegativeInt.optional(),
   })
   .refine((value) => value.name !== undefined || value.target !== undefined, {
     message: 'At least one field is required',
+  })
+  .refine((value) => value.target === undefined || value.category !== undefined, {
+    message: 'Category is required when updating a target',
+    path: ['category'],
   });
 
 export const createChannelSchema = z.object({

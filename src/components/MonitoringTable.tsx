@@ -5,12 +5,12 @@ import { cn, formatNumber, formatPercent } from '../lib/utils';
 import { Plus, X, Settings2, ArrowRight } from 'lucide-react';
 
 export const MonitoringTable: React.FC = () => {
-  const { 
-    activeProduct, 
-    updateCellData, 
-    updateFunnelTarget, 
-    addFunnel, 
-    removeFunnel, 
+  const {
+    activeProduct,
+    updateCellData,
+    updateFunnelTarget,
+    addFunnel,
+    removeFunnel,
     updateFunnelName,
     addChannel,
     removeChannel,
@@ -39,7 +39,7 @@ export const MonitoringTable: React.FC = () => {
 
   const getConversionRate = (category: CategoryType, currentFunnelIdx: number, channelId?: string) => {
     if (currentFunnelIdx === 0) return null;
-    
+
     if (channelId) {
       const current = data[category][funnels[currentFunnelIdx].id]?.[channelId]?.visits || 0;
       const previous = data[category][funnels[currentFunnelIdx - 1].id]?.[channelId]?.visits || 0;
@@ -67,35 +67,35 @@ export const MonitoringTable: React.FC = () => {
             onClick={() => setActiveCategory('newChannels')}
             className={cn(
               "px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200",
-              activeCategory === 'newChannels' 
-                ? "bg-white text-blue-600 shadow-sm" 
+              activeCategory === 'newChannels'
+                ? "bg-white text-blue-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
             )}
           >
-            New Channels
+            New Customer
           </button>
           <button
             onClick={() => setActiveCategory('existingChannels')}
             className={cn(
               "px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200",
-              activeCategory === 'existingChannels' 
-                ? "bg-white text-blue-600 shadow-sm" 
+              activeCategory === 'existingChannels'
+                ? "bg-white text-blue-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
             )}
           >
-            Existing Channels
+            Existing Customer
           </button>
         </div>
 
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={() => addChannel(activeProduct.id, 'New Channel')}
             className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-all"
           >
             <Plus size={16} />
             Add Channel
           </button>
-          <button 
+          <button
             onClick={() => addFunnel(activeProduct.id, 'New Funnel')}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all"
           >
@@ -132,21 +132,30 @@ export const MonitoringTable: React.FC = () => {
                           value={funnel.name}
                           onChange={(e) => updateFunnelName(activeProduct.id, funnel.id, e.target.value)}
                         />
-                        <button 
+                        <button
                           onClick={() => removeFunnel(activeProduct.id, funnel.id)}
                           className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all"
                         >
                           <X size={14} />
                         </button>
                       </div>
-                      
+
                       <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Target Visits</label>
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                          {activeCategory === 'newChannels' ? 'New Target Visits' : 'Existing Target Visits'}
+                        </label>
                         <input
                           type="number"
                           className="bg-white border border-slate-200 rounded-md px-2 py-0.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-100"
-                          value={funnel.target}
-                          onChange={(e) => updateFunnelTarget(activeProduct.id, funnel.id, parseInt(e.target.value) || 0)}
+                          value={funnel.targets[activeCategory]}
+                          onChange={(e) =>
+                            updateFunnelTarget(
+                              activeProduct.id,
+                              activeCategory,
+                              funnel.id,
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
                         />
                       </div>
                     </div>
@@ -161,10 +170,11 @@ export const MonitoringTable: React.FC = () => {
                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Totals</span>
                 <span className="text-sm font-bold block leading-tight">Performance Summary</span>
               </th>
-              
+
               {funnels.map((funnel, idx) => {
                 const totals = getFunnelTotals(activeCategory, funnel.id);
-                const diff = getTargetDiff(totals.visits, funnel.target);
+                const currentTarget = funnel.targets[activeCategory];
+                const diff = getTargetDiff(totals.visits, currentTarget);
                 const isNegative = diff < 0;
 
                 return (
@@ -186,7 +196,7 @@ export const MonitoringTable: React.FC = () => {
                             <span className="text-[8px] font-bold text-slate-500 uppercase">Visits / Target</span>
                             <div className="flex items-baseline gap-1">
                               <span className="text-base font-bold">{formatNumber(totals.visits)}</span>
-                              <span className="text-[11px] text-slate-400">/ {formatNumber(funnel.target)}</span>
+                              <span className="text-[11px] text-slate-400">/ {formatNumber(currentTarget)}</span>
                             </div>
                           </div>
                           <div className="flex flex-col">
@@ -194,7 +204,7 @@ export const MonitoringTable: React.FC = () => {
                             <span className="text-base font-bold text-emerald-400">฿{formatNumber(totals.revenue)}</span>
                           </div>
                         </div>
-                        
+
                         <div className={cn(
                           "flex items-center justify-between p-1.5 rounded-lg border",
                           isNegative ? "bg-red-500/10 border-red-500/20" : "bg-blue-500/10 border-blue-500/20"
@@ -234,7 +244,7 @@ export const MonitoringTable: React.FC = () => {
                       value={channel.name}
                       onChange={(e) => updateChannelName(activeProduct.id, channel.id, e.target.value)}
                     />
-                    <button 
+                    <button
                       onClick={() => removeChannel(activeProduct.id, channel.id)}
                       className="opacity-0 group-hover/label:opacity-100 p-1 text-slate-300 hover:text-red-500 transition-all"
                     >

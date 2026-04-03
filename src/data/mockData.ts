@@ -5,10 +5,10 @@ export const MOCK_PRODUCTS: Product[] = [
     id: 'p1',
     name: 'Premium Subscription',
     funnels: [
-      { id: 'f1', name: 'Awareness', target: 10000 },
-      { id: 'f2', name: 'Consideration', target: 5000 },
-      { id: 'f3', name: 'Conversion', target: 1000 },
-      { id: 'f4', name: 'Retention', target: 800 },
+      { id: 'f1', name: 'Awareness', targets: { newChannels: 10000, existingChannels: 10000 } },
+      { id: 'f2', name: 'Consideration', targets: { newChannels: 5000, existingChannels: 5000 } },
+      { id: 'f3', name: 'Conversion', targets: { newChannels: 1000, existingChannels: 1000 } },
+      { id: 'f4', name: 'Retention', targets: { newChannels: 800, existingChannels: 800 } },
     ],
     channels: [
       { id: 'c1', name: 'Google Ads' },

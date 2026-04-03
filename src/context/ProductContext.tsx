@@ -28,7 +28,12 @@ interface ProductContextType {
     field: 'visits' | 'revenue',
     value: number
   ) => void;
-  updateFunnelTarget: (productId: string, funnelId: string, value: number) => void;
+  updateFunnelTarget: (
+    productId: string,
+    category: CategoryType,
+    funnelId: string,
+    value: number
+  ) => void;
   addFunnel: (productId: string, name: string) => void;
   removeFunnel: (productId: string, funnelId: string) => void;
   updateFunnelName: (productId: string, funnelId: string, name: string) => void;
@@ -314,19 +319,32 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [runProductMutation]
   );
 
-  const updateFunnelTarget = useCallback((productId: string, funnelId: string, value: number) => {
+  const updateFunnelTarget = useCallback((
+    productId: string,
+    category: CategoryType,
+    funnelId: string,
+    value: number,
+  ) => {
     runProductMutation(
       productId,
       (product) => ({
         ...product,
         funnels: product.funnels.map((funnel) =>
-          funnel.id === funnelId ? { ...funnel, target: value } : funnel,
+          funnel.id === funnelId
+            ? {
+                ...funnel,
+                targets: {
+                  ...funnel.targets,
+                  [category]: value,
+                },
+              }
+            : funnel,
         ),
       }),
       () =>
         apiRequest<ProductResponse>(`/products/${productId}/funnels/${funnelId}`, {
           method: 'PATCH',
-          body: JSON.stringify({ target: value }),
+          body: JSON.stringify({ category, target: value }),
         }),
     );
   }, [runProductMutation]);

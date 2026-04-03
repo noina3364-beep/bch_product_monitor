@@ -41,7 +41,9 @@ async function main() {
         await tx.funnelTarget.create({
           data: {
             funnelId: createdFunnel.id,
-            targetVisits: funnel.target,
+            targetVisits: funnel.targets.newChannels,
+            newTargetVisits: funnel.targets.newChannels,
+            existingTargetVisits: funnel.targets.existingChannels,
           },
         });
 
