@@ -5,28 +5,44 @@ import { ZodError } from 'zod';
 import { env } from './config.js';
 import { prisma } from './prisma.js';
 import { AppError } from './errors.js';
+import type { BackupPayload } from './types.js';
 import {
   addChannel,
   addFunnel,
   createProduct,
+  deleteProductAndCompact,
   deleteChannel,
   deleteFunnel,
+  duplicateProduct,
   ensureDashboardTargets,
+  getBackupPayload,
   getDashboardPayload,
   getProductGraphOrThrow,
+  listProductSummaries,
   mapProduct,
+  reorderChannels,
+  reorderFunnels,
+  reorderProducts,
+  restoreBackup,
   toGlobalTargetsDto,
-} from './data.js';
+  updateFunnelParent,
+  updateProductLayout,
+} from './data_v2.js';
 import {
+  backupImportSchema,
   bulkInputValuesSchema,
   createChannelSchema,
   createFunnelSchema,
   createProductSchema,
   idParamSchema,
+  reorderChannelsSchema,
+  reorderFunnelsSchema,
+  reorderProductsSchema,
   updateChannelSchema,
   updateDashboardTargetsSchema,
   updateFunnelSchema,
   updateInputValueSchema,
+  updateProductLayoutSchema,
   updateProductSchema,
 } from './validators.js';
 
@@ -40,7 +56,7 @@ app.use(
     origin: allowedOrigins,
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/health', async (_request, response, next) => {
   try {
@@ -99,13 +115,7 @@ app.patch('/api/targets/dashboard', async (request, response, next) => {
 
 app.get('/api/products', async (_request, response, next) => {
   try {
-    const products = await prisma.product.findMany({
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
+    const products = await listProductSummaries(prisma);
 
     response.json({ products });
   } catch (error) {
@@ -118,6 +128,16 @@ app.post('/api/products', async (request, response, next) => {
     const body = createProductSchema.parse(request.body);
     const product = await prisma.$transaction((tx) => createProduct(tx, body.name));
     response.status(201).json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/products/reorder', async (request, response, next) => {
+  try {
+    const body = reorderProductsSchema.parse(request.body);
+    const products = await prisma.$transaction((tx) => reorderProducts(tx, body.productIds));
+    response.json({ products });
   } catch (error) {
     next(error);
   }
@@ -153,21 +173,32 @@ app.patch('/api/products/:productId', async (request, response, next) => {
 app.delete('/api/products/:productId', async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
-
-    const existing = await prisma.product.findUnique({
-      where: { id: params.productId },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      throw new AppError('Product not found', 404);
-    }
-
-    await prisma.product.delete({
-      where: { id: params.productId },
-    });
+    await prisma.$transaction((tx) => deleteProductAndCompact(tx, params.productId));
 
     response.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/products/:productId/duplicate', async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const product = await prisma.$transaction((tx) => duplicateProduct(tx, params.productId));
+    response.status(201).json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/products/:productId/layout', async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const body = updateProductLayoutSchema.parse(request.body);
+    const product = await prisma.$transaction((tx) =>
+      updateProductLayout(tx, params.productId, body.channelColumnWidth),
+    );
+    response.json({ product: mapProduct(product) });
   } catch (error) {
     next(error);
   }
@@ -191,6 +222,19 @@ app.post('/api/products/:productId/funnels', async (request, response, next) => 
     const body = createFunnelSchema.parse(request.body);
     const product = await prisma.$transaction((tx) => addFunnel(tx, params.productId, body.name));
     response.status(201).json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/products/:productId/funnels/reorder', async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const body = reorderFunnelsSchema.parse(request.body);
+    const product = await prisma.$transaction((tx) =>
+      reorderFunnels(tx, params.productId, body.funnelIds),
+    );
+    response.json({ product: mapProduct(product) });
   } catch (error) {
     next(error);
   }
@@ -229,6 +273,15 @@ app.patch('/api/products/:productId/funnels/:funnelId', async (request, response
           where: { id: params.funnelId },
           data: { name: body.name },
         });
+      }
+
+      if (body.parentFunnelId !== undefined) {
+        await updateFunnelParent(
+          tx,
+          params.productId,
+          params.funnelId!,
+          body.parentFunnelId ?? null,
+        );
       }
 
       if (body.target !== undefined) {
@@ -288,6 +341,19 @@ app.post('/api/products/:productId/channels', async (request, response, next) =>
     const body = createChannelSchema.parse(request.body);
     const product = await prisma.$transaction((tx) => addChannel(tx, params.productId, body.name));
     response.status(201).json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/products/:productId/channels/reorder', async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const body = reorderChannelsSchema.parse(request.body);
+    const product = await prisma.$transaction((tx) =>
+      reorderChannels(tx, params.productId, body.channelIds),
+    );
+    response.json({ product: mapProduct(product) });
   } catch (error) {
     next(error);
   }
@@ -495,6 +561,34 @@ app.put('/api/products/:productId/input-values/bulk', async (request, response, 
     });
 
     response.json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/backup/export', async (_request, response, next) => {
+  try {
+    const backup = await getBackupPayload(prisma);
+    response.json(backup);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/backup/import', async (request, response, next) => {
+  try {
+    const body = backupImportSchema.parse(request.body) as BackupPayload;
+    await prisma.$transaction((tx) => restoreBackup(tx, body));
+
+    const [products, targets] = await Promise.all([
+      Promise.all((await listProductSummaries(prisma)).map(async (product) => mapProduct(await getProductGraphOrThrow(prisma, product.id)))),
+      ensureDashboardTargets(prisma),
+    ]);
+
+    response.json({
+      products,
+      globalTargets: toGlobalTargetsDto(targets),
+    });
   } catch (error) {
     next(error);
   }

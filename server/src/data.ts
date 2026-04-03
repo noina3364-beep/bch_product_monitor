@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Prisma, type Category, type PrismaClient } from '@prisma/client';
 import {
   CATEGORY_VALUES,

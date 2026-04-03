@@ -4,17 +4,21 @@ export const MOCK_PRODUCTS: Product[] = [
   {
     id: 'p1',
     name: 'Premium Subscription',
+    position: 0,
     funnels: [
-      { id: 'f1', name: 'Awareness', targets: { newChannels: 10000, existingChannels: 10000 } },
-      { id: 'f2', name: 'Consideration', targets: { newChannels: 5000, existingChannels: 5000 } },
-      { id: 'f3', name: 'Conversion', targets: { newChannels: 1000, existingChannels: 1000 } },
-      { id: 'f4', name: 'Retention', targets: { newChannels: 800, existingChannels: 800 } },
+      { id: 'f1', name: 'Awareness', position: 0, parentFunnelId: null, targets: { newChannels: 10000, existingChannels: 10000 } },
+      { id: 'f2', name: 'Consideration', position: 1, parentFunnelId: 'f1', targets: { newChannels: 5000, existingChannels: 5000 } },
+      { id: 'f3', name: 'Conversion', position: 2, parentFunnelId: 'f2', targets: { newChannels: 1000, existingChannels: 1000 } },
+      { id: 'f4', name: 'Retention', position: 3, parentFunnelId: 'f3', targets: { newChannels: 800, existingChannels: 800 } },
     ],
     channels: [
-      { id: 'c1', name: 'Google Ads' },
-      { id: 'c2', name: 'Facebook' },
-      { id: 'c3', name: 'LinkedIn' },
+      { id: 'c1', name: 'Google Ads', position: 0 },
+      { id: 'c2', name: 'Facebook', position: 1 },
+      { id: 'c3', name: 'LinkedIn', position: 2 },
     ],
+    layout: {
+      channelColumnWidth: 208,
+    },
     data: {
       newChannels: {
         f1: { c1: { visits: 2500, revenue: 0 }, c2: { visits: 1800, revenue: 0 }, c3: { visits: 1200, revenue: 0 } },

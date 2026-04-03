@@ -15,6 +15,8 @@ enum Category {
 model Product {
   id          String       @id @default(cuid())
   name        String
+  position    Int          @default(0)
+  channelColumnWidth Int   @default(208)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   funnels     Funnel[]
@@ -29,9 +31,12 @@ model Funnel {
   productId   String
   name        String
   position    Int
+  parentFunnelId String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  parentFunnel Funnel?     @relation("FunnelParent", fields: [parentFunnelId], references: [id], onDelete: SetNull)
+  childFunnels Funnel[]    @relation("FunnelParent")
   target      FunnelTarget?
   inputValues InputValue[]
 

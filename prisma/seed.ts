@@ -25,7 +25,11 @@ async function main() {
   for (const product of PRODUCT_SEED) {
     await prisma.$transaction(async (tx) => {
       const createdProduct = await tx.product.create({
-        data: { name: product.name },
+        data: {
+          name: product.name,
+          position: PRODUCT_SEED.indexOf(product),
+          channelColumnWidth: product.channelColumnWidth,
+        },
       });
 
       const createdFunnels: Array<{ id: string }> = [];
@@ -35,6 +39,8 @@ async function main() {
             productId: createdProduct.id,
             name: funnel.name,
             position: index,
+            parentFunnelId:
+              funnel.parentIndex === null ? null : createdFunnels[funnel.parentIndex]?.id ?? null,
           },
         });
 

@@ -7,11 +7,12 @@ export const DASHBOARD_TARGET_SEED = {
 export const PRODUCT_SEED = [
   {
     name: 'Premium Subscription',
+    channelColumnWidth: 208,
     funnels: [
-      { name: 'Awareness', targets: { newChannels: 10_000, existingChannels: 10_000 } },
-      { name: 'Consideration', targets: { newChannels: 5_000, existingChannels: 5_000 } },
-      { name: 'Conversion', targets: { newChannels: 1_000, existingChannels: 1_000 } },
-      { name: 'Retention', targets: { newChannels: 800, existingChannels: 800 } },
+      { name: 'Awareness', parentIndex: null, targets: { newChannels: 10_000, existingChannels: 10_000 } },
+      { name: 'Consideration', parentIndex: 0, targets: { newChannels: 5_000, existingChannels: 5_000 } },
+      { name: 'Conversion', parentIndex: 1, targets: { newChannels: 1_000, existingChannels: 1_000 } },
+      { name: 'Retention', parentIndex: 2, targets: { newChannels: 800, existingChannels: 800 } },
     ],
     channels: [
       { name: 'Google Ads' },

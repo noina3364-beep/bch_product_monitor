@@ -1,5 +1,5 @@
 import React from 'react';
-import { useProducts } from '../context/ProductContext';
+import { useProducts } from '../context/ProductContextV2';
 import { formatNumber, formatPercent, cn } from '../lib/utils';
 import { Users, TrendingUp, Package } from 'lucide-react';
 
@@ -212,7 +212,7 @@ export const Dashboard: React.FC = () => {
               <div className="divide-y divide-slate-100">
                 {productBreakdown.map((p) => (
                   <div key={p.id} className="grid grid-cols-[208px_1fr_1fr_1fr] gap-6 px-6 py-4 hover:bg-slate-50/50 transition-colors items-center">
-                    <div className="font-bold text-slate-900 truncate">{p.name}</div>
+                    <div className="font-bold leading-snug break-words text-slate-900">{p.name}</div>
                     
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-emerald-600">฿{formatNumber(p.revenue)}</span>

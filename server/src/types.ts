@@ -3,14 +3,21 @@ import type { CategoryValue } from './constants.js';
 export interface ProductDto {
   id: string;
   name: string;
+  position: number;
+  layout: {
+    channelColumnWidth: number;
+  };
   funnels: Array<{
     id: string;
     name: string;
+    position: number;
+    parentFunnelId: string | null;
     targets: Record<CategoryValue, number>;
   }>;
   channels: Array<{
     id: string;
     name: string;
+    position: number;
   }>;
   data: Record<CategoryValue, Record<string, Record<string, { visits: number; revenue: number }>>>;
 }
@@ -35,4 +42,11 @@ export interface DashboardResponse {
     newVisits: number;
     existingVisits: number;
   }>;
+}
+
+export interface BackupPayload {
+  backupVersion: number;
+  exportedAt: string;
+  globalTargets: GlobalTargetsDto;
+  products: ProductDto[];
 }

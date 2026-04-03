@@ -24,6 +24,14 @@ This file gives Codex and other coding agents the minimum project context needed
 - Apply Prisma schema to SQLite: `npm run prisma:push`
 - Seed database: `npm run prisma:seed`
 
+Windows helper scripts:
+
+- First-time install: `install.bat`
+- First-time initialize: `init.bat`
+- Regular update after pulling new code: `update.bat`
+- Regular start: `start.bat`
+- Stop frontend/backend started by `start.bat`: `stop.bat`
+
 Notes:
 
 - `npm run lint` runs `tsc --noEmit`; there is no ESLint setup in this repo yet.
@@ -79,14 +87,30 @@ Types live in `src/types/index.ts`.
 Important shape:
 
 - A `Product` has shared `funnels` and `channels`
+- Each funnel now has category-specific targets:
+  - `targets.newChannels`
+  - `targets.existingChannels`
 - Metric data is split into two categories:
   - `newChannels`
   - `existingChannels`
 - Each category is keyed as `funnelId -> channelId -> { visits, revenue }`
 
+Backend persistence detail:
+
+- Prisma stores funnel targets in `funnel_targets`
+- Current schema keeps:
+  - `targetVisits` as a legacy/shared fallback for older databases
+  - `newTargetVisits`
+  - `existingTargetVisits`
+- Backend DTO mapping returns only the frontend shape with `targets.newChannels` and `targets.existingChannels`
+
 ## Implementation Notes
 
 - Keep the frontend product shape aligned with the backend DTO shape returned by `/api/products/:productId/dashboard`.
+- When changing funnel target behavior, update all three layers together:
+  - `src/types/index.ts`
+  - backend DTO mapping in `server/src/data.ts`
+  - Prisma schema and seed data
 - Keep `newChannels` and `existingChannels` structurally in sync when adding or removing funnels/channels.
 - `activeProduct === null` is meaningful UI state and should continue to show the overview dashboard.
 - Most frontend updates are optimistic and then reconciled with the server response; avoid changing response shapes casually.
@@ -94,6 +118,24 @@ Important shape:
   - Sidebar logo: `public/images/B.png`
   - Dashboard logo: `public/images/Chan.png`
 - Styling is utility-first Tailwind directly in components; match the existing visual language unless the task is a deliberate redesign.
+- SQLite writes and some dev-server commands can fail inside restricted environments; in those cases prefer the batch files or unsandboxed local runs.
+
+## Database Access
+
+- Main SQLite file: `prisma/dev.db`
+- Useful options:
+  - `npx prisma studio`
+  - SQLite GUI tools such as DB Browser for SQLite / SQLiteStudio / DBeaver
+  - `sqlite3 prisma/dev.db` if the SQLite CLI is installed
+
+Main tables:
+
+- `products`
+- `funnels`
+- `funnel_targets`
+- `channels`
+- `input_values`
+- `dashboard_targets`
 
 ## Files To Check Before Major Changes
 
@@ -105,7 +147,10 @@ Important shape:
 - `src/types/index.ts`
 - `server/src/index.ts`
 - `server/src/data.ts`
+- `server/src/validators.ts`
 - `prisma/schema.prisma`
+- `prisma/seed-data.ts`
+- `start.bat`
 
 ## Agent Working Agreement
 
@@ -119,4 +164,5 @@ Important shape:
 
 - No automated tests are present.
 - Some local dev commands need to run outside the sandbox because Vite/esbuild and SQLite writes can be restricted here.
+- Batch files are the expected Windows entrypoints for non-technical users; if startup/setup behavior changes, update them too.
 - README may still lag behind product-specific UX decisions if the app changes quickly.
