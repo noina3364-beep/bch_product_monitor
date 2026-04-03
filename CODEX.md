@@ -7,7 +7,7 @@ This file gives Codex and other coding agents the minimum project context needed
 - Project name: BCH Product Monitor
 - Stack: Vite, React 19, TypeScript, Tailwind CSS v4, Express, Prisma, SQLite, Lucide icons
 - App shape: single-page dashboard for monitoring products, funnels, channels, visits, and revenue
-- Frontend state model: `src/context/ProductContext.tsx` hydrates from the backend API and keeps the UI in sync
+- Frontend state model: `src/context/ProductContextV2.tsx` hydrates from the backend API and keeps the UI in sync
 - Backend: Express API in `server/src` with Prisma schema in `prisma/schema.prisma`
 - Persistence: SQLite database at `prisma/dev.db`
 - Deployment origin: this repo appears to be exported from Google AI Studio
@@ -59,24 +59,24 @@ For local work, follow the README and place the needed values in `.env` or `.env
 - `src/App.tsx` wraps the UI in `ProductProvider`
 - `DashboardContent` decides between:
   - `Dashboard` when no product is selected
-  - `MonitoringTable` when a product is active
+  - `MonitoringTableV2` when a product is active
 
 ### Core state
 
-`src/context/ProductContext.tsx` is the main source of truth for:
+`src/context/ProductContextV2.tsx` is the main source of truth for:
 
 - `products`
 - `activeProduct`
 - `globalTargets`
 - frontend loading/error state
-- API-backed mutations for products, funnels, channels, and cell values
+- API-backed mutations for products, funnels, channels, cell values, layout width, reorder, duplicate, and backup import/export
 
 When changing frontend data behavior, update the provider first and keep components thin.
 
 ### Backend flow
 
 - `server/src/index.ts` exposes REST endpoints under `/api`
-- `server/src/data.ts` contains the main mapping and mutation helpers
+- `server/src/data_v2.ts` contains the active mapping and mutation helpers for the new UX/data model
 - Prisma models live in `prisma/schema.prisma`
 - Seed data lives in `prisma/seed-data.ts`
 
@@ -87,9 +87,16 @@ Types live in `src/types/index.ts`.
 Important shape:
 
 - A `Product` has shared `funnels` and `channels`
+- Each product now also stores:
+  - `position`
+  - `layout.channelColumnWidth`
 - Each funnel now has category-specific targets:
   - `targets.newChannels`
   - `targets.existingChannels`
+- Each funnel also stores:
+  - `position`
+  - `parentFunnelId`
+- Each channel stores `position`
 - Metric data is split into two categories:
   - `newChannels`
   - `existingChannels`
@@ -98,6 +105,8 @@ Important shape:
 Backend persistence detail:
 
 - Prisma stores funnel targets in `funnel_targets`
+- Prisma stores product ordering and channel header width on `products`
+- Prisma stores funnel ordering and funnel parent relationships on `funnels`
 - Current schema keeps:
   - `targetVisits` as a legacy/shared fallback for older databases
   - `newTargetVisits`
@@ -109,15 +118,36 @@ Backend persistence detail:
 - Keep the frontend product shape aligned with the backend DTO shape returned by `/api/products/:productId/dashboard`.
 - When changing funnel target behavior, update all three layers together:
   - `src/types/index.ts`
-  - backend DTO mapping in `server/src/data.ts`
+  - backend DTO mapping in `server/src/data_v2.ts`
   - Prisma schema and seed data
+- Funnel conversion is no longer based on adjacent columns.
+  - Use `funnel.parentFunnelId`
+  - Reordering funnels changes display order only, not parent relationships
 - Keep `newChannels` and `existingChannels` structurally in sync when adding or removing funnels/channels.
 - `activeProduct === null` is meaningful UI state and should continue to show the overview dashboard.
 - Most frontend updates are optimistic and then reconciled with the server response; avoid changing response shapes casually.
+- Product duplication is a full copy:
+  - funnels
+  - channels
+  - both category targets
+  - input values
+  - parent relationships
+  - positions
+  - channel column width
+- Backup/import is full-app JSON:
+  - export from `/api/backup/export`
+  - import to `/api/backup/import`
+  - import is replace-all, not merge
 - Local images live in `public/images/`.
   - Sidebar logo: `public/images/B.png`
   - Dashboard logo: `public/images/Chan.png`
 - Styling is utility-first Tailwind directly in components; match the existing visual language unless the task is a deliberate redesign.
+- Current product-table behavior:
+  - top controls stay above the table
+  - the channel name column stays sticky on horizontal scroll
+  - the channel header row and `Performance Summary` row are not frozen and should scroll vertically with the rest of the table
+  - per-cell conversion percentage should remain visually highlighted as a badge next to the `Conv from ...` label
+  - product-page revenue symbol should render as `฿`
 - SQLite writes and some dev-server commands can fail inside restricted environments; in those cases prefer the batch files or unsandboxed local runs.
 
 ## Database Access
@@ -139,14 +169,16 @@ Main tables:
 
 ## Files To Check Before Major Changes
 
-- `src/context/ProductContext.tsx`
+- `src/context/ProductContextV2.tsx`
 - `src/components/Dashboard.tsx`
-- `src/components/MonitoringTable.tsx`
-- `src/components/Sidebar.tsx`
+- `src/components/MonitoringTableV2.tsx`
+- `src/components/SidebarV2.tsx`
+- `src/components/ConfirmationDialog.tsx`
+- `src/components/AutosizeTextarea.tsx`
 - `src/lib/api.ts`
 - `src/types/index.ts`
 - `server/src/index.ts`
-- `server/src/data.ts`
+- `server/src/data_v2.ts`
 - `server/src/validators.ts`
 - `prisma/schema.prisma`
 - `prisma/seed-data.ts`
@@ -165,4 +197,5 @@ Main tables:
 - No automated tests are present.
 - Some local dev commands need to run outside the sandbox because Vite/esbuild and SQLite writes can be restricted here.
 - Batch files are the expected Windows entrypoints for non-technical users; if startup/setup behavior changes, update them too.
+- Legacy files such as `src/context/ProductContext.tsx`, `src/components/MonitoringTable.tsx`, `src/components/Sidebar.tsx`, and `server/src/data.ts` may still exist, but the active app is wired to the `V2` files listed above.
 - README may still lag behind product-specific UX decisions if the app changes quickly.
