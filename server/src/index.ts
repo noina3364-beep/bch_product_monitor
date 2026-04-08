@@ -1,9 +1,19 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
-import cors from 'cors';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { env } from './config.js';
 import { prisma } from './prisma.js';
+import {
+  authMiddleware,
+  createEditorSession,
+  createViewerSession,
+  destroySession,
+  getRequestAuth,
+  requireAuthenticated,
+  requireEditor,
+  toAuthSessionDto,
+  verifyPassword,
+} from './auth.js';
 import { AppError } from './errors.js';
 import type { BackupPayload } from './types.js';
 import {
@@ -34,6 +44,7 @@ import {
   createChannelSchema,
   createFunnelSchema,
   createProductSchema,
+  editorLoginSchema,
   idParamSchema,
   reorderChannelsSchema,
   reorderFunnelsSchema,
@@ -47,16 +58,78 @@ import {
 } from './validators.js';
 
 const app = express();
+app.locals.prisma = prisma;
 const allowedOrigins = Array.from(
   new Set([env.CLIENT_ORIGIN, 'http://localhost:3000', 'http://127.0.0.1:3000']),
 );
 
-app.use(
-  cors({
-    origin: allowedOrigins,
-  }),
-);
+function isPrivateIpv4(hostname: string) {
+  const match = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) {
+    return false;
+  }
+
+  const [first, second] = [Number(match[1]), Number(match[2])];
+  return (
+    first === 10 ||
+    first === 127 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
+function isAllowedOrigin(origin: string) {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return true;
+    }
+
+    if (isPrivateIpv4(hostname)) {
+      return true;
+    }
+
+    if (!hostname.includes('.')) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+app.use((request, response, next) => {
+  const origin = request.headers.origin;
+
+  if (origin && isAllowedOrigin(origin)) {
+    response.header('Access-Control-Allow-Origin', origin);
+    response.header('Vary', 'Origin');
+    response.header('Access-Control-Allow-Credentials', 'true');
+  }
+
+  response.header('Access-Control-Allow-Headers', 'Content-Type');
+  response.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+
+  if (request.method === 'OPTIONS') {
+    response.status(204).send();
+    return;
+  }
+
+  next();
+});
 app.use(express.json({ limit: '10mb' }));
+app.use(authMiddleware);
 
 app.get('/api/health', async (_request, response, next) => {
   try {
@@ -71,7 +144,70 @@ app.get('/api/health', async (_request, response, next) => {
   }
 });
 
-app.get('/api/dashboard', async (_request, response, next) => {
+app.get('/api/auth/session', (request, response) => {
+  response.json(toAuthSessionDto(getRequestAuth(request)));
+});
+
+app.post('/api/auth/login/editor', async (request, response, next) => {
+  try {
+    const body = editorLoginSchema.parse(request.body);
+    const existingSessionId = getRequestAuth(request)?.sessionId ?? null;
+
+    if (existingSessionId) {
+      await destroySession(prisma, existingSessionId, response);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { username: body.username.trim() },
+      select: {
+        id: true,
+        username: true,
+        passwordHash: true,
+        role: true,
+      },
+    });
+
+    if (!user || user.role !== 'editor') {
+      throw new AppError('Invalid username or password', 401);
+    }
+
+    const isValid = await verifyPassword(body.password, user.passwordHash);
+    if (!isValid) {
+      throw new AppError('Invalid username or password', 401);
+    }
+
+    const session = await createEditorSession(prisma, user.id, user.username, response);
+    response.json(session);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/auth/login/viewer', async (request, response, next) => {
+  try {
+    const existingSessionId = getRequestAuth(request)?.sessionId ?? null;
+
+    if (existingSessionId) {
+      await destroySession(prisma, existingSessionId, response);
+    }
+
+    const session = await createViewerSession(prisma, response);
+    response.json(session);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/auth/logout', async (request, response, next) => {
+  try {
+    await destroySession(prisma, getRequestAuth(request)?.sessionId ?? null, response);
+    response.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/dashboard', requireAuthenticated, async (_request, response, next) => {
   try {
     const payload = await getDashboardPayload(prisma);
     response.json(payload);
@@ -80,7 +216,7 @@ app.get('/api/dashboard', async (_request, response, next) => {
   }
 });
 
-app.get('/api/targets/dashboard', async (_request, response, next) => {
+app.get('/api/targets/dashboard', requireAuthenticated, async (_request, response, next) => {
   try {
     const targets = await ensureDashboardTargets(prisma);
     response.json({
@@ -91,7 +227,7 @@ app.get('/api/targets/dashboard', async (_request, response, next) => {
   }
 });
 
-app.patch('/api/targets/dashboard', async (request, response, next) => {
+app.patch('/api/targets/dashboard', requireEditor, async (request, response, next) => {
   try {
     const body = updateDashboardTargetsSchema.parse(request.body);
     const existing = await ensureDashboardTargets(prisma);
@@ -113,7 +249,7 @@ app.patch('/api/targets/dashboard', async (request, response, next) => {
   }
 });
 
-app.get('/api/products', async (_request, response, next) => {
+app.get('/api/products', requireAuthenticated, async (_request, response, next) => {
   try {
     const products = await listProductSummaries(prisma);
 
@@ -123,7 +259,7 @@ app.get('/api/products', async (_request, response, next) => {
   }
 });
 
-app.post('/api/products', async (request, response, next) => {
+app.post('/api/products', requireEditor, async (request, response, next) => {
   try {
     const body = createProductSchema.parse(request.body);
     const product = await prisma.$transaction((tx) => createProduct(tx, body.name));
@@ -133,7 +269,7 @@ app.post('/api/products', async (request, response, next) => {
   }
 });
 
-app.patch('/api/products/reorder', async (request, response, next) => {
+app.patch('/api/products/reorder', requireEditor, async (request, response, next) => {
   try {
     const body = reorderProductsSchema.parse(request.body);
     const products = await prisma.$transaction((tx) => reorderProducts(tx, body.productIds));
@@ -143,7 +279,7 @@ app.patch('/api/products/reorder', async (request, response, next) => {
   }
 });
 
-app.get('/api/products/:productId/dashboard', async (request, response, next) => {
+app.get('/api/products/:productId/dashboard', requireAuthenticated, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await getProductGraphOrThrow(prisma, params.productId);
@@ -153,7 +289,7 @@ app.get('/api/products/:productId/dashboard', async (request, response, next) =>
   }
 });
 
-app.patch('/api/products/:productId', async (request, response, next) => {
+app.patch('/api/products/:productId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateProductSchema.parse(request.body);
@@ -170,7 +306,7 @@ app.patch('/api/products/:productId', async (request, response, next) => {
   }
 });
 
-app.delete('/api/products/:productId', async (request, response, next) => {
+app.delete('/api/products/:productId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     await prisma.$transaction((tx) => deleteProductAndCompact(tx, params.productId));
@@ -181,7 +317,7 @@ app.delete('/api/products/:productId', async (request, response, next) => {
   }
 });
 
-app.post('/api/products/:productId/duplicate', async (request, response, next) => {
+app.post('/api/products/:productId/duplicate', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await prisma.$transaction((tx) => duplicateProduct(tx, params.productId));
@@ -191,7 +327,7 @@ app.post('/api/products/:productId/duplicate', async (request, response, next) =
   }
 });
 
-app.patch('/api/products/:productId/layout', async (request, response, next) => {
+app.patch('/api/products/:productId/layout', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateProductLayoutSchema.parse(request.body);
@@ -204,7 +340,7 @@ app.patch('/api/products/:productId/layout', async (request, response, next) => 
   }
 });
 
-app.get('/api/products/:productId/funnels', async (request, response, next) => {
+app.get('/api/products/:productId/funnels', requireAuthenticated, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await getProductGraphOrThrow(prisma, params.productId);
@@ -216,7 +352,7 @@ app.get('/api/products/:productId/funnels', async (request, response, next) => {
   }
 });
 
-app.post('/api/products/:productId/funnels', async (request, response, next) => {
+app.post('/api/products/:productId/funnels', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = createFunnelSchema.parse(request.body);
@@ -227,7 +363,7 @@ app.post('/api/products/:productId/funnels', async (request, response, next) => 
   }
 });
 
-app.patch('/api/products/:productId/funnels/reorder', async (request, response, next) => {
+app.patch('/api/products/:productId/funnels/reorder', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = reorderFunnelsSchema.parse(request.body);
@@ -240,7 +376,7 @@ app.patch('/api/products/:productId/funnels/reorder', async (request, response, 
   }
 });
 
-app.patch('/api/products/:productId/funnels/:funnelId', async (request, response, next) => {
+app.patch('/api/products/:productId/funnels/:funnelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateFunnelSchema.parse(request.body);
@@ -313,7 +449,7 @@ app.patch('/api/products/:productId/funnels/:funnelId', async (request, response
   }
 });
 
-app.delete('/api/products/:productId/funnels/:funnelId', async (request, response, next) => {
+app.delete('/api/products/:productId/funnels/:funnelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await prisma.$transaction((tx) => deleteFunnel(tx, params.productId, params.funnelId!));
@@ -323,7 +459,7 @@ app.delete('/api/products/:productId/funnels/:funnelId', async (request, respons
   }
 });
 
-app.get('/api/products/:productId/channels', async (request, response, next) => {
+app.get('/api/products/:productId/channels', requireAuthenticated, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await getProductGraphOrThrow(prisma, params.productId);
@@ -335,7 +471,7 @@ app.get('/api/products/:productId/channels', async (request, response, next) => 
   }
 });
 
-app.post('/api/products/:productId/channels', async (request, response, next) => {
+app.post('/api/products/:productId/channels', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = createChannelSchema.parse(request.body);
@@ -346,7 +482,7 @@ app.post('/api/products/:productId/channels', async (request, response, next) =>
   }
 });
 
-app.patch('/api/products/:productId/channels/reorder', async (request, response, next) => {
+app.patch('/api/products/:productId/channels/reorder', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = reorderChannelsSchema.parse(request.body);
@@ -359,7 +495,7 @@ app.patch('/api/products/:productId/channels/reorder', async (request, response,
   }
 });
 
-app.patch('/api/products/:productId/channels/:channelId', async (request, response, next) => {
+app.patch('/api/products/:productId/channels/:channelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateChannelSchema.parse(request.body);
@@ -388,7 +524,7 @@ app.patch('/api/products/:productId/channels/:channelId', async (request, respon
   }
 });
 
-app.delete('/api/products/:productId/channels/:channelId', async (request, response, next) => {
+app.delete('/api/products/:productId/channels/:channelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await prisma.$transaction((tx) => deleteChannel(tx, params.productId, params.channelId!));
@@ -398,7 +534,7 @@ app.delete('/api/products/:productId/channels/:channelId', async (request, respo
   }
 });
 
-app.get('/api/products/:productId/input-values', async (request, response, next) => {
+app.get('/api/products/:productId/input-values', requireAuthenticated, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const product = await prisma.product.findUnique({
@@ -447,6 +583,7 @@ app.get('/api/products/:productId/input-values', async (request, response, next)
 
 app.patch(
   '/api/products/:productId/input-values/:category/:funnelId/:channelId',
+  requireEditor,
   async (request, response, next) => {
     try {
       const params = idParamSchema.parse(request.params);
@@ -502,7 +639,7 @@ app.patch(
   },
 );
 
-app.put('/api/products/:productId/input-values/bulk', async (request, response, next) => {
+app.put('/api/products/:productId/input-values/bulk', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = bulkInputValuesSchema.parse(request.body);
@@ -566,7 +703,7 @@ app.put('/api/products/:productId/input-values/bulk', async (request, response, 
   }
 });
 
-app.get('/api/backup/export', async (_request, response, next) => {
+app.get('/api/backup/export', requireEditor, async (_request, response, next) => {
   try {
     const backup = await getBackupPayload(prisma);
     response.json(backup);
@@ -575,7 +712,7 @@ app.get('/api/backup/export', async (_request, response, next) => {
   }
 });
 
-app.post('/api/backup/import', async (request, response, next) => {
+app.post('/api/backup/import', requireEditor, async (request, response, next) => {
   try {
     const body = backupImportSchema.parse(request.body) as BackupPayload;
     await prisma.$transaction((tx) => restoreBackup(tx, body));

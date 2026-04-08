@@ -3,6 +3,10 @@ setlocal
 
 cd /d "%~dp0"
 
+echo WARNING: init.bat resets and reseeds the local database.
+echo Existing products, funnels, channels, and values in prisma\dev.db will be replaced.
+echo.
+
 echo Generating Prisma client...
 call npm run prisma:generate
 if errorlevel 1 goto :error
@@ -19,6 +23,11 @@ if errorlevel 1 goto :error
 
 echo.
 echo Initialization complete.
+echo Default Editor login:
+echo   Username: editor
+echo   Password: ChangeMe123!
+echo Optional:
+echo   Run set-password.bat to change the Editor password after initialization.
 exit /b 0
 
 :error

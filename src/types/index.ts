@@ -1,4 +1,5 @@
 export type CategoryType = 'newChannels' | 'existingChannels';
+export type UserRole = 'editor' | 'viewer';
 
 export interface FunnelTargets {
   newChannels: number;
@@ -58,4 +59,10 @@ export interface BackupPayload {
   exportedAt: string;
   globalTargets: GlobalTargets;
   products: Product[];
+}
+
+export interface AuthSession {
+  authenticated: boolean;
+  role: UserRole | null;
+  username: string | null;
 }

@@ -1,14 +1,17 @@
 import React, { useRef, useState } from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Download, LogOut, Shield, Upload } from 'lucide-react';
 import { Sidebar } from './components/SidebarV2';
-import { MonitoringTable } from './components/MonitoringTableV2';
-import { Dashboard } from './components/Dashboard';
+import { MonitoringTableAuth } from './components/MonitoringTableAuth';
+import { DashboardAuth } from './components/DashboardAuth';
 import { ConfirmationDialog } from './components/ConfirmationDialog';
+import { LoginPage } from './components/LoginPage';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProductProvider, useProducts } from './context/ProductContextV2';
 import type { BackupPayload } from './types';
 
 const DashboardContent: React.FC = () => {
   const { activeProduct, dismissError, error, exportBackup, importBackup, isLoading } = useProducts();
+  const { isEditor, logout, session } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingImport, setPendingImport] = useState<{ filename: string; payload: BackupPayload } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -66,27 +69,42 @@ const DashboardContent: React.FC = () => {
               </h2>
             </div>
             <div className="flex items-center gap-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={handleImportSelection}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-            >
-              <Upload size={15} />
-              Import Backup
-            </button>
-            <button
-              onClick={() => void handleExport()}
-              className="inline-flex items-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-            >
-              <Download size={15} />
-              Export Backup
-            </button>
+              {isEditor ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
+                    onChange={handleImportSelection}
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    <Upload size={15} />
+                    Import Backup
+                  </button>
+                  <button
+                    onClick={() => void handleExport()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                  >
+                    <Download size={15} />
+                    Export Backup
+                  </button>
+                </>
+              ) : null}
+              <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-slate-600">
+                <Shield size={13} />
+                {session.role === 'editor' ? 'Editor' : 'Viewer'}
+              </span>
+              <button
+                onClick={() => void logout()}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <LogOut size={15} />
+                Logout
+              </button>
             </div>
           </div>
         </header>
@@ -117,15 +135,15 @@ const DashboardContent: React.FC = () => {
               </div>
             </div>
           ) : activeProduct ? (
-            <MonitoringTable />
+            <MonitoringTableAuth />
           ) : (
-            <Dashboard />
+            <DashboardAuth />
           )}
         </div>
       </main>
 
       <ConfirmationDialog
-        isOpen={pendingImport !== null}
+        isOpen={isEditor && pendingImport !== null}
         title="Replace current data with this backup?"
         message={
           pendingImport
@@ -157,8 +175,32 @@ const DashboardContent: React.FC = () => {
 
 export default function App() {
   return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
+  );
+}
+
+const AuthenticatedApp: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
+        <div className="rounded-3xl border border-slate-200 bg-white px-8 py-6 text-sm font-semibold text-slate-500 shadow-sm">
+          Loading BCH Product Monitor...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return (
     <ProductProvider>
       <DashboardContent />
     </ProductProvider>
   );
-}
+};

@@ -176,3 +176,8 @@ export const backupImportSchema = z.object({
   }),
   products: z.array(backupProductSchema),
 });
+
+export const editorLoginSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required').max(120),
+  password: z.string().min(1, 'Password is required').max(255),
+});

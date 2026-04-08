@@ -1,9 +1,22 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductContextV2';
-import { formatNumber, formatPercent, cn } from '../lib/utils';
+import { cn, formatNumber, formatPercent } from '../lib/utils';
 import { Users, TrendingUp, Package } from 'lucide-react';
 
+interface ReadonlyValueProps {
+  value: number;
+  prefix?: string;
+}
+
+const ReadonlyValue: React.FC<ReadonlyValueProps> = ({ value, prefix = '' }) => (
+  <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-bold text-slate-900">
+    {prefix}{formatNumber(value)}
+  </div>
+);
+
 export const Dashboard: React.FC = () => {
+  const { isEditor } = useAuth();
   const { products, globalTargets, updateGlobalTargets } = useProducts();
 
   // Calculate actuals from all products

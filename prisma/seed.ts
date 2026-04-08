@@ -1,17 +1,28 @@
 import { PrismaClient, type Category } from '@prisma/client';
 import { DASHBOARD_TARGET_SEED, PRODUCT_SEED } from './seed-data.js';
+import { hashPassword } from '../server/src/auth.js';
 
 const prisma = new PrismaClient();
 
 const categories: Category[] = ['newChannels', 'existingChannels'];
 
 async function main() {
+  await prisma.session.deleteMany();
+  await prisma.user.deleteMany();
   await prisma.inputValue.deleteMany();
   await prisma.funnelTarget.deleteMany();
   await prisma.channel.deleteMany();
   await prisma.funnel.deleteMany();
   await prisma.product.deleteMany();
   await prisma.dashboardTarget.deleteMany();
+
+  await prisma.user.create({
+    data: {
+      username: 'editor',
+      passwordHash: await hashPassword('ChangeMe123!'),
+      role: 'editor',
+    },
+  });
 
   await prisma.dashboardTarget.create({
     data: {

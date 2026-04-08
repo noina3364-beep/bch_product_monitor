@@ -1,4 +1,5 @@
 import type { CategoryValue } from './constants.js';
+import type { Role } from '@prisma/client';
 
 export interface ProductDto {
   id: string;
@@ -49,4 +50,10 @@ export interface BackupPayload {
   exportedAt: string;
   globalTargets: GlobalTargetsDto;
   products: ProductDto[];
+}
+
+export interface AuthSessionDto {
+  authenticated: boolean;
+  role: Role | null;
+  username: string | null;
 }

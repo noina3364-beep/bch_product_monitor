@@ -19,6 +19,9 @@ if errorlevel 1 goto :error
 
 echo.
 echo Update complete.
+echo Note:
+echo   update.bat keeps existing data.
+echo   If you need a clean reset with the default Editor account reseeded, run init.bat instead.
 exit /b 0
 
 :error

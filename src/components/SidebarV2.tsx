@@ -23,6 +23,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductContextV2';
 import { cn } from '../lib/utils';
 import { ConfirmationDialog } from './ConfirmationDialog';
@@ -41,6 +42,7 @@ interface SortableProductRowProps {
   onEditNameChange: (value: string) => void;
   onDuplicate: (event: React.MouseEvent, id: string) => void;
   onDelete: (event: React.MouseEvent, id: string, name: string) => void;
+  canEdit: boolean;
 }
 
 const SortableProductRow: React.FC<SortableProductRowProps> = ({
@@ -54,6 +56,7 @@ const SortableProductRow: React.FC<SortableProductRowProps> = ({
   onEditNameChange,
   onDuplicate,
   onDelete,
+  canEdit,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: product.id,
@@ -76,21 +79,23 @@ const SortableProductRow: React.FC<SortableProductRowProps> = ({
       )}
     >
       <div className="flex min-w-0 flex-1 items-start gap-3">
-        <button
-          type="button"
-          className={cn(
-            'mt-0.5 rounded p-1 transition-colors',
-            isActive ? 'text-blue-200 hover:bg-blue-500/30' : 'text-slate-500 hover:bg-slate-700',
-          )}
-          onClick={(event) => event.stopPropagation()}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={13} />
-        </button>
+        {canEdit ? (
+          <button
+            type="button"
+            className={cn(
+              'mt-0.5 rounded p-1 transition-colors',
+              isActive ? 'text-blue-200 hover:bg-blue-500/30' : 'text-slate-500 hover:bg-slate-700',
+            )}
+            onClick={(event) => event.stopPropagation()}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={13} />
+          </button>
+        ) : null}
         <Package size={16} className={cn('mt-1 shrink-0', isActive ? 'text-blue-200' : 'text-slate-500')} />
         <div className="min-w-0 flex-1">
-          {isEditing ? (
+          {isEditing && canEdit ? (
             <input
               autoFocus
               className="w-full rounded border border-blue-400 bg-slate-800 px-1 py-0.5 text-sm text-white outline-none"
@@ -123,30 +128,35 @@ const SortableProductRow: React.FC<SortableProductRowProps> = ({
           'group-hover:opacity-100',
         )}
       >
-        <button
-          onClick={(event) => onDuplicate(event, product.id)}
-          className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white"
-        >
-          <Copy size={12} />
-        </button>
-        <button
-          onClick={(event) => onStartEdit(event, product.id, product.name)}
-          className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white"
-        >
-          <Edit2 size={12} />
-        </button>
-        <button
-          onClick={(event) => onDelete(event, product.id, product.name)}
-          className="rounded p-1 text-slate-400 hover:bg-red-900 hover:text-red-300"
-        >
-          <Trash2 size={12} />
-        </button>
+        {canEdit ? (
+          <>
+            <button
+              onClick={(event) => onDuplicate(event, product.id)}
+              className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white"
+            >
+              <Copy size={12} />
+            </button>
+            <button
+              onClick={(event) => onStartEdit(event, product.id, product.name)}
+              className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white"
+            >
+              <Edit2 size={12} />
+            </button>
+            <button
+              onClick={(event) => onDelete(event, product.id, product.name)}
+              className="rounded p-1 text-slate-400 hover:bg-red-900 hover:text-red-300"
+            >
+              <Trash2 size={12} />
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );
 };
 
 export const Sidebar: React.FC = () => {
+  const { isEditor } = useAuth();
   const {
     products,
     activeProduct,
@@ -254,13 +264,14 @@ export const Sidebar: React.FC = () => {
                       event.stopPropagation();
                       setPendingDelete({ id, name });
                     }}
+                    canEdit={isEditor}
                   />
                 ))}
               </div>
             </SortableContext>
           </DndContext>
 
-          {isAdding ? (
+          {isEditor && isAdding ? (
             <div className="px-3 py-2">
               <input
                 autoFocus
@@ -272,7 +283,7 @@ export const Sidebar: React.FC = () => {
                 onBlur={() => !newProductName && setIsAdding(false)}
               />
             </div>
-          ) : (
+          ) : isEditor ? (
             <button
               onClick={() => setIsAdding(true)}
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-500 transition-all hover:bg-slate-800 hover:text-blue-400"
@@ -280,12 +291,12 @@ export const Sidebar: React.FC = () => {
               <Plus size={16} />
               <span>Add Product</span>
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 
       <ConfirmationDialog
-        isOpen={pendingDelete !== null}
+        isOpen={isEditor && pendingDelete !== null}
         title="Delete product?"
         message={
           pendingDelete
