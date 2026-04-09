@@ -611,14 +611,14 @@ export const MonitoringTableAuth: React.FC = () => {
                         <div
                           className={cn(
                             'flex items-center justify-between rounded-xl border p-2',
-                            isNegative ? 'border-red-500/20 bg-red-500/10' : 'border-blue-500/20 bg-blue-500/10',
+                            isNegative ? 'border-red-500/20 bg-red-500/10' : 'border-emerald-500/20 bg-emerald-500/10',
                           )}
                         >
                           <div>
                             <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                               Vs Target
                             </div>
-                            <div className={cn('text-sm font-bold', isNegative ? 'text-red-400' : 'text-blue-400')}>
+                            <div className={cn('text-sm font-bold', isNegative ? 'text-red-400' : 'text-emerald-400')}>
                               {diff > 0 ? '+' : ''}{formatPercent(diff)}
                             </div>
                           </div>
