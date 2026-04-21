@@ -15,7 +15,8 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "tsx prisma/push.ts",
     "prisma:seed": "tsx prisma/seed.ts",
-    "auth:set-password": "node scripts/set-editor-password.mjs"
+    "auth:set-password": "node scripts/set-editor-password.mjs",
+    "auth:ensure-default-editor": "node scripts/ensure-default-editor.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

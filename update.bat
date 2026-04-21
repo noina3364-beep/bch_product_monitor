@@ -18,6 +18,11 @@ call npm run prisma:push
 if errorlevel 1 goto :error
 
 echo.
+echo Ensuring default Editor user exists...
+call npm run auth:ensure-default-editor
+if errorlevel 1 goto :error
+
+echo.
 echo Update complete.
 echo Note:
 echo   update.bat keeps existing data.

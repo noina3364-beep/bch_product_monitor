@@ -82,6 +82,9 @@ Invoke-CheckedCommand 'npm run prisma:generate'
 Write-Host 'Applying database schema...'
 Invoke-CheckedCommand 'npm run prisma:push'
 
+Write-Host 'Ensuring default Editor user exists...'
+Invoke-CheckedCommand 'npm run auth:ensure-default-editor'
+
 if ($needsSeed) {
   Write-Host ''
   Write-Host 'Seeding first-time database...'
