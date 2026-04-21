@@ -12,6 +12,11 @@ enum Category {
   existingChannels
 }
 
+enum ProductCategory {
+  new
+  existing
+}
+
 enum Role {
   editor
   viewer
@@ -41,65 +46,6 @@ model Session {
   @@map("sessions")
 }
 
-model Product {
-  id          String       @id @default(cuid())
-  name        String
-  position    Int          @default(0)
-  channelColumnWidth Int   @default(208)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  funnels     Funnel[]
-  channels    Channel[]
-  inputValues InputValue[]
-
-  @@map("products")
-}
-
-model Funnel {
-  id          String       @id @default(cuid())
-  productId   String
-  name        String
-  position    Int
-  parentFunnelId String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  parentFunnel Funnel?     @relation("FunnelParent", fields: [parentFunnelId], references: [id], onDelete: SetNull)
-  childFunnels Funnel[]    @relation("FunnelParent")
-  target      FunnelTarget?
-  inputValues InputValue[]
-
-  @@unique([productId, position])
-  @@map("funnels")
-}
-
-model FunnelTarget {
-  id                   String   @id @default(cuid())
-  funnelId             String   @unique
-  targetVisits         Int
-  newTargetVisits      Int?
-  existingTargetVisits Int?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  funnel               Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
-
-  @@map("funnel_targets")
-}
-
-model Channel {
-  id          String       @id @default(cuid())
-  productId   String
-  name        String
-  position    Int
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  inputValues InputValue[]
-
-  @@unique([productId, position])
-  @@map("channels")
-}
-
 model DashboardTarget {
   id                      Int      @id
   revenueTarget           Int
@@ -110,19 +56,156 @@ model DashboardTarget {
   @@map("dashboard_targets")
 }
 
-model InputValue {
-  id         String   @id @default(cuid())
+model Product {
+  id         String                 @id @default(cuid())
+  name       String
+  position   Int                    @default(0)
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  categories ProductCategoryState[]
+
+  @@map("pm_products")
+}
+
+model ProductCategoryState {
+  id                 String             @id @default(cuid())
+  productId          String
+  category           ProductCategory
+  channelColumnWidth Int                @default(208)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  product            Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  funnels            ProductFunnel[]
+  channels           ProductChannel[]
+  weeklyInputs       WeeklyInputValue[]
+
+  @@unique([productId, category])
+  @@map("pm_product_categories")
+}
+
+model ProductFunnel {
+  id             String            @id @default(cuid())
+  categoryStateId String
+  name           String
+  position       Int
+  parentFunnelId String?
+  targetVisits   Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  categoryState  ProductCategoryState @relation(fields: [categoryStateId], references: [id], onDelete: Cascade)
+  parentFunnel   ProductFunnel?    @relation("ProductFunnelParent", fields: [parentFunnelId], references: [id], onDelete: SetNull)
+  childFunnels   ProductFunnel[]   @relation("ProductFunnelParent")
+  weeklyInputs   WeeklyInputValue[]
+
+  @@unique([categoryStateId, position])
+  @@map("pm_funnels")
+}
+
+model ProductChannel {
+  id              String             @id @default(cuid())
+  categoryStateId String
+  name            String
+  position        Int
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  categoryState   ProductCategoryState @relation(fields: [categoryStateId], references: [id], onDelete: Cascade)
+  weeklyInputs    WeeklyInputValue[]
+
+  @@unique([categoryStateId, position])
+  @@map("pm_channels")
+}
+
+model WeeklyInputValue {
+  id              String             @id @default(cuid())
+  categoryStateId String
+  funnelId        String
+  channelId       String
+  weekStartDate   DateTime
+  visits          Int
+  revenue         Int
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  categoryState   ProductCategoryState @relation(fields: [categoryStateId], references: [id], onDelete: Cascade)
+  funnel          ProductFunnel      @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  channel         ProductChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryStateId, funnelId, channelId, weekStartDate])
+  @@index([categoryStateId, weekStartDate])
+  @@map("pm_weekly_input_values")
+}
+
+model LegacySharedProduct {
+  id                 String                   @id @default(cuid())
+  name               String
+  position           Int                      @default(0)
+  channelColumnWidth Int                      @default(208)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  funnels            LegacySharedFunnel[]
+  channels           LegacySharedChannel[]
+  inputValues        LegacySharedInputValue[]
+
+  @@map("products")
+}
+
+model LegacySharedFunnel {
+  id             String                  @id @default(cuid())
+  productId      String
+  name           String
+  position       Int
+  parentFunnelId String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  product        LegacySharedProduct     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  parentFunnel   LegacySharedFunnel?     @relation("LegacyFunnelParent", fields: [parentFunnelId], references: [id], onDelete: SetNull)
+  childFunnels   LegacySharedFunnel[]    @relation("LegacyFunnelParent")
+  target         LegacySharedFunnelTarget?
+  inputValues    LegacySharedInputValue[]
+
+  @@unique([productId, position])
+  @@map("funnels")
+}
+
+model LegacySharedFunnelTarget {
+  id                   String             @id @default(cuid())
+  funnelId             String             @unique
+  targetVisits         Int
+  newTargetVisits      Int?
+  existingTargetVisits Int?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  funnel               LegacySharedFunnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  @@map("funnel_targets")
+}
+
+model LegacySharedChannel {
+  id         String                   @id @default(cuid())
   productId  String
-  funnelId   String
-  channelId  String
-  category   Category
-  visits     Int
-  revenue    Int
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  funnel     Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
-  channel    Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  name       String
+  position   Int
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+  product    LegacySharedProduct      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inputValues LegacySharedInputValue[]
+
+  @@unique([productId, position])
+  @@map("channels")
+}
+
+model LegacySharedInputValue {
+  id        String               @id @default(cuid())
+  productId String
+  funnelId  String
+  channelId String
+  category  Category
+  visits    Int
+  revenue   Int
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  product   LegacySharedProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  funnel    LegacySharedFunnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  channel   LegacySharedChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@unique([productId, category, funnelId, channelId])
   @@map("input_values")

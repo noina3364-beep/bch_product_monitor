@@ -2,6 +2,8 @@ import React from 'react';
 import { Package, TrendingUp, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductContextV2';
+import { getProductActuals, getScaledGlobalTargets } from '../lib/productMetrics';
+import { getPeriodLabel } from '../lib/periods';
 import { cn, formatNumber, formatPercent } from '../lib/utils';
 
 interface TargetCardProps {
@@ -60,7 +62,8 @@ const TargetCard: React.FC<TargetCardProps> = ({
           </div>
         ) : (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-bold text-slate-900">
-            {prefix}{formatNumber(value)}
+            {prefix}
+            {formatNumber(value)}
           </div>
         )}
 
@@ -69,7 +72,8 @@ const TargetCard: React.FC<TargetCardProps> = ({
             <span className="text-[9px] font-bold uppercase text-slate-400">Actual</span>
             <div className="flex items-center gap-1.5">
               <span className={cn('text-base font-bold', accentClassName)}>
-                {prefix}{formatNumber(actual)}
+                {prefix}
+                {formatNumber(actual)}
               </span>
               <span
                 className={cn(
@@ -93,98 +97,74 @@ const TargetCard: React.FC<TargetCardProps> = ({
 
 export const DashboardAuth: React.FC = () => {
   const { isEditor } = useAuth();
-  const { products, globalTargets, updateGlobalTargets } = useProducts();
+  const { products, globalTargets, period, updateGlobalTargets } = useProducts();
+  const scaledTargets = getScaledGlobalTargets(globalTargets, period);
 
-  const globalActuals = products.reduce(
+  const productBreakdown = products.map((product) => {
+    const actuals = getProductActuals(product, period);
+    return {
+      id: product.id,
+      name: product.name,
+      ...actuals,
+    };
+  });
+
+  const globalActuals = productBreakdown.reduce(
     (acc, product) => {
-      Object.values(product.data.newChannels).forEach((funnel) => {
-        Object.values(funnel).forEach((channel) => {
-          acc.revenue += channel.revenue;
-          acc.newVisits += channel.visits;
-        });
-      });
-
-      Object.values(product.data.existingChannels).forEach((funnel) => {
-        Object.values(funnel).forEach((channel) => {
-          acc.revenue += channel.revenue;
-          acc.existingVisits += channel.visits;
-        });
-      });
-
+      acc.revenue += product.revenue;
+      acc.newVisits += product.newVisits;
+      acc.existingVisits += product.existingVisits;
       return acc;
     },
     { revenue: 0, newVisits: 0, existingVisits: 0 },
   );
 
-  const productBreakdown = products.map((product) => {
-    let revenue = 0;
-    let newVisits = 0;
-    let existingVisits = 0;
-
-    Object.values(product.data.newChannels).forEach((funnel) => {
-      Object.values(funnel).forEach((channel) => {
-        revenue += channel.revenue;
-        newVisits += channel.visits;
-      });
-    });
-
-    Object.values(product.data.existingChannels).forEach((funnel) => {
-      Object.values(funnel).forEach((channel) => {
-        revenue += channel.revenue;
-        existingVisits += channel.visits;
-      });
-    });
-
-    return {
-      id: product.id,
-      name: product.name,
-      revenue,
-      newVisits,
-      existingVisits,
-    };
-  });
-
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 p-8">
       <div className="mx-auto max-w-6xl space-y-8">
-        <div className="grid grid-cols-[208px_1fr_1fr_1fr] items-center gap-6 px-6">
-          <div className="flex items-center justify-center pr-6">
+        <div className="flex items-center justify-between px-6">
+          <div className="flex items-center gap-4">
             <img
               src="/images/Chan.png"
               alt="Bangkok Hospital Chanthaburi"
-              className="h-16 w-full object-contain"
+              className="h-16 w-[208px] object-contain"
             />
           </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+            {period.view === 'week' ? getPeriodLabel(period) : `${period.view.toUpperCase()} ${getPeriodLabel(period)}`}
+          </div>
+        </div>
 
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <TargetCard
             accentClassName="text-blue-600"
             icon={<TrendingUp size={18} />}
-            label="Target Revenue"
-            value={globalTargets.revenue}
+            label="Revenue Target"
+            value={scaledTargets.revenue}
             actual={globalActuals.revenue}
             progressClassName="bg-emerald-500"
             prefix="฿"
-            onChange={isEditor ? (value) => updateGlobalTargets({ revenue: value }) : undefined}
+            onChange={isEditor && period.view === 'week' ? (value) => void updateGlobalTargets({ revenue: value }) : undefined}
           />
 
           <TargetCard
             accentClassName="text-indigo-600"
             icon={<Users size={18} />}
-            label="Target New Customers"
-            value={globalTargets.newCustomers}
+            label="New Customer Target"
+            value={scaledTargets.newCustomers}
             actual={globalActuals.newVisits}
             progressClassName="bg-indigo-500"
-            onChange={isEditor ? (value) => updateGlobalTargets({ newCustomers: value }) : undefined}
+            onChange={isEditor && period.view === 'week' ? (value) => void updateGlobalTargets({ newCustomers: value }) : undefined}
           />
 
           <TargetCard
             accentClassName="text-purple-600"
             icon={<Users size={18} />}
-            label="Target Existing Customers"
-            value={globalTargets.existingCustomers}
+            label="Existing Customer Target"
+            value={scaledTargets.existingCustomers}
             actual={globalActuals.existingVisits}
             progressClassName="bg-purple-500"
-            onChange={isEditor ? (value) => updateGlobalTargets({ existingCustomers: value }) : undefined}
+            onChange={isEditor && period.view === 'week' ? (value) => void updateGlobalTargets({ existingCustomers: value }) : undefined}
           />
         </div>
 
@@ -192,7 +172,12 @@ export const DashboardAuth: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 p-6">
             <div className="flex items-center gap-3">
               <Package className="text-slate-400" />
-              <h2 className="text-lg font-bold text-slate-900">Product Performance Breakdown</h2>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Product Performance Breakdown</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Totals shown for {period.view === 'week' ? getPeriodLabel(period) : `${period.view.toUpperCase()} ${getPeriodLabel(period)}`}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -201,9 +186,9 @@ export const DashboardAuth: React.FC = () => {
               <div className="border-b border-slate-100 bg-slate-50">
                 <div className="grid grid-cols-[208px_1fr_1fr_1fr] gap-6 px-6 py-4">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Product Name</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Sum Revenue</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Sum New Visits</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Sum Existing Visits</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Revenue</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">New Visits</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Existing Visits</div>
                 </div>
               </div>
 
@@ -239,6 +224,12 @@ export const DashboardAuth: React.FC = () => {
                     </div>
                   </div>
                 ))}
+
+                {productBreakdown.length === 0 ? (
+                  <div className="px-6 py-10 text-center text-sm font-medium text-slate-500">
+                    No products available yet.
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

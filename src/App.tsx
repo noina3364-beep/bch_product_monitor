@@ -5,18 +5,31 @@ import { MonitoringTableAuth } from './components/MonitoringTableAuth';
 import { DashboardAuth } from './components/DashboardAuth';
 import { ConfirmationDialog } from './components/ConfirmationDialog';
 import { LoginPage } from './components/LoginPage';
+import { PeriodSelector } from './components/PeriodSelector';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProductProvider, useProducts } from './context/ProductContextV2';
+import { getAvailableYears } from './lib/productMetrics';
 import type { BackupPayload } from './types';
 
 const DashboardContent: React.FC = () => {
-  const { activeProduct, dismissError, error, exportBackup, importBackup, isLoading } = useProducts();
+  const {
+    activeProduct,
+    dismissError,
+    error,
+    exportBackup,
+    importBackup,
+    isLoading,
+    period,
+    products,
+    setPeriod,
+  } = useProducts();
   const { isEditor, logout, session } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingImport, setPendingImport] = useState<{ filename: string; payload: BackupPayload } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const visibleError = error ?? localError;
+  const availableYears = getAvailableYears(products);
 
   const handleExport = async () => {
     try {
@@ -56,19 +69,20 @@ const DashboardContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-slate-50">
       <Sidebar />
-      
-      <main className="flex-1 flex flex-col min-w-0">
-        {/* Top Navbar */}
+
+      <main className="flex min-w-0 flex-1 flex-col">
         <header className="min-h-16 shrink-0 border-b border-slate-200 bg-white px-8 py-4">
-          <div className="flex items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <h2 className="max-w-[420px] text-xl font-bold leading-tight text-slate-900 break-words">
+          <div className="flex flex-wrap items-center justify-between gap-6">
+            <div className="flex min-w-0 items-center gap-4">
+              <h2 className="max-w-[320px] text-xl font-bold leading-tight text-slate-900 break-words">
                 {activeProduct?.name || 'Main Dashboard'}
               </h2>
+              <PeriodSelector period={period} availableYears={availableYears} onChange={setPeriod} />
             </div>
-            <div className="flex items-center gap-3">
+
+            <div className="flex flex-wrap items-center gap-3">
               {isEditor ? (
                 <>
                   <input
@@ -94,10 +108,12 @@ const DashboardContent: React.FC = () => {
                   </button>
                 </>
               ) : null}
+
               <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-slate-600">
                 <Shield size={13} />
                 {session.role === 'editor' ? 'Editor' : 'Viewer'}
               </span>
+
               <button
                 onClick={() => void logout()}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
@@ -109,8 +125,7 @@ const DashboardContent: React.FC = () => {
           </div>
         </header>
 
-        {/* Main Content Area */}
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex flex-1 flex-col overflow-hidden">
           {visibleError ? (
             <div className="px-8 pt-6">
               <div className="flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
@@ -147,7 +162,7 @@ const DashboardContent: React.FC = () => {
         title="Replace current data with this backup?"
         message={
           pendingImport
-            ? `Import "${pendingImport.filename}" and replace the current products, funnels, channels, targets, and values?`
+            ? `Import "${pendingImport.filename}" and replace the current products, category graphs, weekly history, targets, and values?`
             : ''
         }
         confirmLabel="Import Backup"

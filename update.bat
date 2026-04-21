@@ -26,7 +26,8 @@ echo.
 echo Update complete.
 echo Note:
 echo   update.bat keeps existing data.
-echo   If you need a clean reset with the default Editor account reseeded, run init.bat instead.
+echo   Existing products, category graphs, and weekly history are preserved.
+echo   If you need a clean reset with fresh sample weekly data and the default Editor account reseeded, run init.bat instead.
 exit /b 0
 
 :error

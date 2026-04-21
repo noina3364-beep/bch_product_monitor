@@ -1,10 +1,14 @@
-import type { CategoryValue } from './constants.js';
 import type { Role } from '@prisma/client';
+import type { CategoryKey, PeriodView } from './constants.js';
 
-export interface ProductDto {
+export interface ProductMatrixCellDto {
+  visits: number;
+  revenue: number;
+}
+
+export interface ProductCategoryDto {
   id: string;
-  name: string;
-  position: number;
+  key: CategoryKey;
   layout: {
     channelColumnWidth: number;
   };
@@ -13,14 +17,21 @@ export interface ProductDto {
     name: string;
     position: number;
     parentFunnelId: string | null;
-    targets: Record<CategoryValue, number>;
+    targetVisits: number;
   }>;
   channels: Array<{
     id: string;
     name: string;
     position: number;
   }>;
-  data: Record<CategoryValue, Record<string, Record<string, { visits: number; revenue: number }>>>;
+  weeks: Record<string, Record<string, Record<string, ProductMatrixCellDto>>>;
+}
+
+export interface ProductDto {
+  id: string;
+  name: string;
+  position: number;
+  categories: Record<CategoryKey, ProductCategoryDto>;
 }
 
 export interface GlobalTargetsDto {
@@ -31,6 +42,12 @@ export interface GlobalTargetsDto {
 
 export interface DashboardResponse {
   globalTargets: GlobalTargetsDto;
+  period: {
+    view: PeriodView;
+    referenceDate: string;
+    label: string;
+    includedWeeks: string[];
+  };
   globalActuals: {
     revenue: number;
     newVisits: number;
@@ -48,6 +65,11 @@ export interface DashboardResponse {
 export interface BackupPayload {
   backupVersion: number;
   exportedAt: string;
+  periodRules: {
+    inputGrain: 'week';
+    weekStartsOn: 'monday';
+    periodOwnership: 'weekStartDate';
+  };
   globalTargets: GlobalTargetsDto;
   products: ProductDto[];
 }

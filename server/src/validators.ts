@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import {
   BACKUP_VERSION,
-  CATEGORY_VALUES,
+  CATEGORY_KEYS,
   MAX_CHANNEL_COLUMN_WIDTH,
   MIN_CHANNEL_COLUMN_WIDTH,
+  PERIOD_VIEWS,
 } from './constants.js';
 
 const trimmedName = z
@@ -17,6 +18,12 @@ const nonNegativeInt = z
   .int('Expected an integer')
   .min(0, 'Expected a non-negative integer');
 
+const isoDateString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date');
+
+export const dateKeySchema = isoDateString;
+
 const cellSchema = z.object({
   visits: nonNegativeInt,
   revenue: nonNegativeInt,
@@ -24,9 +31,15 @@ const cellSchema = z.object({
 
 export const idParamSchema = z.object({
   productId: z.string().min(1),
+  category: z.enum(CATEGORY_KEYS).optional(),
   funnelId: z.string().min(1).optional(),
   channelId: z.string().min(1).optional(),
-  category: z.enum(CATEGORY_VALUES).optional(),
+  weekStartDate: isoDateString.optional(),
+});
+
+export const periodQuerySchema = z.object({
+  view: z.enum(PERIOD_VIEWS).default('week'),
+  referenceDate: isoDateString.default(new Date().toISOString().slice(0, 10)),
 });
 
 export const createProductSchema = z.object({
@@ -44,21 +57,18 @@ export const createFunnelSchema = z.object({
 export const updateFunnelSchema = z
   .object({
     name: trimmedName.optional(),
-    category: z.enum(CATEGORY_VALUES).optional(),
-    target: nonNegativeInt.optional(),
+    targetVisits: nonNegativeInt.optional(),
     parentFunnelId: z.string().min(1).nullable().optional(),
   })
   .refine(
     (value) =>
-      value.name !== undefined || value.target !== undefined || value.parentFunnelId !== undefined,
+      value.name !== undefined ||
+      value.targetVisits !== undefined ||
+      value.parentFunnelId !== undefined,
     {
-    message: 'At least one field is required',
+      message: 'At least one field is required',
     },
-  )
-  .refine((value) => value.target === undefined || value.category !== undefined, {
-    message: 'Category is required when updating a target',
-    path: ['category'],
-  });
+  );
 
 export const createChannelSchema = z.object({
   name: trimmedName,
@@ -94,15 +104,8 @@ export const updateInputValueSchema = z
   });
 
 export const bulkInputValuesSchema = z.object({
-  data: z
-    .object({
-      newChannels: z.record(z.string(), z.record(z.string(), cellSchema)).optional(),
-      existingChannels: z.record(z.string(), z.record(z.string(), cellSchema)).optional(),
-    })
-    .refine(
-      (value) => value.newChannels !== undefined || value.existingChannels !== undefined,
-      { message: 'At least one category is required' },
-    ),
+  weekStartDate: isoDateString,
+  data: z.record(z.string(), z.record(z.string(), cellSchema)),
 });
 
 export const reorderProductsSchema = z.object({
@@ -125,15 +128,9 @@ export const updateProductLayoutSchema = z.object({
     .max(MAX_CHANNEL_COLUMN_WIDTH),
 });
 
-const backupCellSchema = z.object({
-  visits: nonNegativeInt,
-  revenue: nonNegativeInt,
-});
-
-const backupProductSchema = z.object({
+const backupCategorySchema = z.object({
   id: z.string().min(1),
-  name: trimmedName,
-  position: z.number().int().min(0),
+  key: z.enum(CATEGORY_KEYS),
   layout: z.object({
     channelColumnWidth: z
       .number({ error: 'Expected a number' })
@@ -147,10 +144,7 @@ const backupProductSchema = z.object({
       name: trimmedName,
       position: z.number().int().min(0),
       parentFunnelId: z.string().min(1).nullable(),
-      targets: z.object({
-        newChannels: nonNegativeInt,
-        existingChannels: nonNegativeInt,
-      }),
+      targetVisits: nonNegativeInt,
     }),
   ),
   channels: z.array(
@@ -160,15 +154,27 @@ const backupProductSchema = z.object({
       position: z.number().int().min(0),
     }),
   ),
-  data: z.object({
-    newChannels: z.record(z.string(), z.record(z.string(), backupCellSchema)),
-    existingChannels: z.record(z.string(), z.record(z.string(), backupCellSchema)),
+  weeks: z.record(z.string(), z.record(z.string(), z.record(z.string(), cellSchema))),
+});
+
+const backupProductSchema = z.object({
+  id: z.string().min(1),
+  name: trimmedName,
+  position: z.number().int().min(0),
+  categories: z.object({
+    new: backupCategorySchema,
+    existing: backupCategorySchema,
   }),
 });
 
 export const backupImportSchema = z.object({
   backupVersion: z.literal(BACKUP_VERSION),
   exportedAt: z.string().datetime(),
+  periodRules: z.object({
+    inputGrain: z.literal('week'),
+    weekStartsOn: z.literal('monday'),
+    periodOwnership: z.literal('weekStartDate'),
+  }),
   globalTargets: z.object({
     revenue: nonNegativeInt,
     newCustomers: nonNegativeInt,

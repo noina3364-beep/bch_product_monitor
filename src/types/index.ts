@@ -1,9 +1,10 @@
-export type CategoryType = 'newChannels' | 'existingChannels';
+export type ProductCategoryKey = 'new' | 'existing';
 export type UserRole = 'editor' | 'viewer';
+export type PeriodView = 'week' | 'mtd' | 'ytd';
 
-export interface FunnelTargets {
-  newChannels: number;
-  existingChannels: number;
+export interface PeriodSelection {
+  view: PeriodView;
+  referenceDate: string;
 }
 
 export interface FunnelStage {
@@ -11,7 +12,7 @@ export interface FunnelStage {
   name: string;
   position: number;
   parentFunnelId: string | null;
-  targets: FunnelTargets;
+  targetVisits: number;
 }
 
 export interface ChannelData {
@@ -29,23 +30,26 @@ export interface ProductLayout {
   channelColumnWidth: number;
 }
 
-export interface ProductData {
+export interface ProductWeekData {
   [funnelId: string]: {
     [channelId: string]: ChannelData;
   };
+}
+
+export interface ProductCategoryState {
+  id: string;
+  key: ProductCategoryKey;
+  layout: ProductLayout;
+  funnels: FunnelStage[];
+  channels: Channel[];
+  weeks: Record<string, ProductWeekData>;
 }
 
 export interface Product {
   id: string;
   name: string;
   position: number;
-  funnels: FunnelStage[];
-  channels: Channel[]; // Shared structure for both New and Existing
-  layout: ProductLayout;
-  data: {
-    newChannels: ProductData;
-    existingChannels: ProductData;
-  };
+  categories: Record<ProductCategoryKey, ProductCategoryState>;
 }
 
 export interface GlobalTargets {
@@ -57,6 +61,11 @@ export interface GlobalTargets {
 export interface BackupPayload {
   backupVersion: number;
   exportedAt: string;
+  periodRules: {
+    inputGrain: 'week';
+    weekStartsOn: 'monday';
+    periodOwnership: 'weekStartDate';
+  };
   globalTargets: GlobalTargets;
   products: Product[];
 }

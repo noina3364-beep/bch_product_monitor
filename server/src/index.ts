@@ -14,15 +14,14 @@ import {
   toAuthSessionDto,
   verifyPassword,
 } from './auth.js';
-import { AppError } from './errors.js';
-import type { BackupPayload } from './types.js';
+import { type CategoryKey, type PeriodView } from './constants.js';
 import {
   addChannel,
   addFunnel,
   createProduct,
-  deleteProductAndCompact,
   deleteChannel,
   deleteFunnel,
+  deleteProductAndCompact,
   duplicateProduct,
   ensureDashboardTargets,
   getBackupPayload,
@@ -38,14 +37,19 @@ import {
   updateFunnelParent,
   updateProductLayout,
 } from './data_v2.js';
+import { AppError } from './errors.js';
+import { formatDateKey, parseDateKey } from './periods.js';
+import type { BackupPayload } from './types.js';
 import {
   backupImportSchema,
   bulkInputValuesSchema,
   createChannelSchema,
   createFunnelSchema,
   createProductSchema,
+  dateKeySchema,
   editorLoginSchema,
   idParamSchema,
+  periodQuerySchema,
   reorderChannelsSchema,
   reorderFunnelsSchema,
   reorderProductsSchema,
@@ -109,6 +113,10 @@ function isAllowedOrigin(origin: string) {
   }
 }
 
+function getMappedProductCategory(product: ReturnType<typeof mapProduct>, category: CategoryKey) {
+  return product.categories[category];
+}
+
 app.use((request, response, next) => {
   const origin = request.headers.origin;
 
@@ -134,7 +142,6 @@ app.use(authMiddleware);
 app.get('/api/health', async (_request, response, next) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-
     response.json({
       status: 'ok',
       database: 'ok',
@@ -207,9 +214,10 @@ app.post('/api/auth/logout', async (request, response, next) => {
   }
 });
 
-app.get('/api/dashboard', requireAuthenticated, async (_request, response, next) => {
+app.get('/api/dashboard', requireAuthenticated, async (request, response, next) => {
   try {
-    const payload = await getDashboardPayload(prisma);
+    const query = periodQuerySchema.parse(request.query);
+    const payload = await getDashboardPayload(prisma, query.view as PeriodView, query.referenceDate);
     response.json(payload);
   } catch (error) {
     next(error);
@@ -252,7 +260,6 @@ app.patch('/api/targets/dashboard', requireEditor, async (request, response, nex
 app.get('/api/products', requireAuthenticated, async (_request, response, next) => {
   try {
     const products = await listProductSummaries(prisma);
-
     response.json({ products });
   } catch (error) {
     next(error);
@@ -310,7 +317,6 @@ app.delete('/api/products/:productId', requireEditor, async (request, response, 
   try {
     const params = idParamSchema.parse(request.params);
     await prisma.$transaction((tx) => deleteProductAndCompact(tx, params.productId));
-
     response.status(204).send();
   } catch (error) {
     next(error);
@@ -327,12 +333,12 @@ app.post('/api/products/:productId/duplicate', requireEditor, async (request, re
   }
 });
 
-app.patch('/api/products/:productId/layout', requireEditor, async (request, response, next) => {
+app.patch('/api/products/:productId/categories/:category/layout', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateProductLayoutSchema.parse(request.body);
     const product = await prisma.$transaction((tx) =>
-      updateProductLayout(tx, params.productId, body.channelColumnWidth),
+      updateProductLayout(tx, params.productId, params.category!, body.channelColumnWidth),
     );
     response.json({ product: mapProduct(product) });
   } catch (error) {
@@ -340,35 +346,37 @@ app.patch('/api/products/:productId/layout', requireEditor, async (request, resp
   }
 });
 
-app.get('/api/products/:productId/funnels', requireAuthenticated, async (request, response, next) => {
+app.get('/api/products/:productId/categories/:category/funnels', requireAuthenticated, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
-    const product = await getProductGraphOrThrow(prisma, params.productId);
+    const product = mapProduct(await getProductGraphOrThrow(prisma, params.productId));
     response.json({
-      funnels: mapProduct(product).funnels,
+      funnels: getMappedProductCategory(product, params.category!).funnels,
     });
   } catch (error) {
     next(error);
   }
 });
 
-app.post('/api/products/:productId/funnels', requireEditor, async (request, response, next) => {
+app.post('/api/products/:productId/categories/:category/funnels', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = createFunnelSchema.parse(request.body);
-    const product = await prisma.$transaction((tx) => addFunnel(tx, params.productId, body.name));
+    const product = await prisma.$transaction((tx) =>
+      addFunnel(tx, params.productId, params.category!, body.name),
+    );
     response.status(201).json({ product: mapProduct(product) });
   } catch (error) {
     next(error);
   }
 });
 
-app.patch('/api/products/:productId/funnels/reorder', requireEditor, async (request, response, next) => {
+app.patch('/api/products/:productId/categories/:category/funnels/reorder', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = reorderFunnelsSchema.parse(request.body);
     const product = await prisma.$transaction((tx) =>
-      reorderFunnels(tx, params.productId, body.funnelIds),
+      reorderFunnels(tx, params.productId, params.category!, body.funnelIds),
     );
     response.json({ product: mapProduct(product) });
   } catch (error) {
@@ -376,37 +384,23 @@ app.patch('/api/products/:productId/funnels/reorder', requireEditor, async (requ
   }
 });
 
-app.patch('/api/products/:productId/funnels/:funnelId', requireEditor, async (request, response, next) => {
+app.patch('/api/products/:productId/categories/:category/funnels/:funnelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateFunnelSchema.parse(request.body);
 
     const product = await prisma.$transaction(async (tx) => {
-      const existing = await tx.funnel.findFirst({
-        where: {
-          id: params.funnelId,
-          productId: params.productId,
-        },
-        select: {
-          id: true,
-          target: {
-            select: {
-              id: true,
-              targetVisits: true,
-              newTargetVisits: true,
-              existingTargetVisits: true,
-            },
-          },
-        },
-      });
+      const graph = await getProductGraphOrThrow(tx, params.productId);
+      const category = graph.categories.find((entry) => entry.category === params.category);
+      const existing = category?.funnels.find((funnel) => funnel.id === params.funnelId);
 
       if (!existing) {
         throw new AppError('Funnel not found', 404);
       }
 
       if (body.name) {
-        await tx.funnel.update({
-          where: { id: params.funnelId },
+        await tx.productFunnel.update({
+          where: { id: params.funnelId! },
           data: { name: body.name },
         });
       }
@@ -415,29 +409,17 @@ app.patch('/api/products/:productId/funnels/:funnelId', requireEditor, async (re
         await updateFunnelParent(
           tx,
           params.productId,
+          params.category!,
           params.funnelId!,
           body.parentFunnelId ?? null,
         );
       }
 
-      if (body.target !== undefined) {
-        const targetField =
-          body.category === 'newChannels' ? 'newTargetVisits' : 'existingTargetVisits';
-
-        if (existing.target) {
-          await tx.funnelTarget.update({
-            where: { funnelId: params.funnelId },
-            data: { [targetField]: body.target },
-          });
-        } else {
-          await tx.funnelTarget.create({
-            data: {
-              funnelId: params.funnelId!,
-              targetVisits: body.target,
-              [targetField]: body.target,
-            },
-          });
-        }
+      if (body.targetVisits !== undefined) {
+        await tx.productFunnel.update({
+          where: { id: params.funnelId! },
+          data: { targetVisits: body.targetVisits },
+        });
       }
 
       return getProductGraphOrThrow(tx, params.productId);
@@ -449,45 +431,11 @@ app.patch('/api/products/:productId/funnels/:funnelId', requireEditor, async (re
   }
 });
 
-app.delete('/api/products/:productId/funnels/:funnelId', requireEditor, async (request, response, next) => {
+app.delete('/api/products/:productId/categories/:category/funnels/:funnelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
-    const product = await prisma.$transaction((tx) => deleteFunnel(tx, params.productId, params.funnelId!));
-    response.json({ product: mapProduct(product) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get('/api/products/:productId/channels', requireAuthenticated, async (request, response, next) => {
-  try {
-    const params = idParamSchema.parse(request.params);
-    const product = await getProductGraphOrThrow(prisma, params.productId);
-    response.json({
-      channels: mapProduct(product).channels,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post('/api/products/:productId/channels', requireEditor, async (request, response, next) => {
-  try {
-    const params = idParamSchema.parse(request.params);
-    const body = createChannelSchema.parse(request.body);
-    const product = await prisma.$transaction((tx) => addChannel(tx, params.productId, body.name));
-    response.status(201).json({ product: mapProduct(product) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.patch('/api/products/:productId/channels/reorder', requireEditor, async (request, response, next) => {
-  try {
-    const params = idParamSchema.parse(request.params);
-    const body = reorderChannelsSchema.parse(request.body);
     const product = await prisma.$transaction((tx) =>
-      reorderChannels(tx, params.productId, body.channelIds),
+      deleteFunnel(tx, params.productId, params.category!, params.funnelId!),
     );
     response.json({ product: mapProduct(product) });
   } catch (error) {
@@ -495,24 +443,59 @@ app.patch('/api/products/:productId/channels/reorder', requireEditor, async (req
   }
 });
 
-app.patch('/api/products/:productId/channels/:channelId', requireEditor, async (request, response, next) => {
+app.get('/api/products/:productId/categories/:category/channels', requireAuthenticated, async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const product = mapProduct(await getProductGraphOrThrow(prisma, params.productId));
+    response.json({
+      channels: getMappedProductCategory(product, params.category!).channels,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/products/:productId/categories/:category/channels', requireEditor, async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const body = createChannelSchema.parse(request.body);
+    const product = await prisma.$transaction((tx) =>
+      addChannel(tx, params.productId, params.category!, body.name),
+    );
+    response.status(201).json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/products/:productId/categories/:category/channels/reorder', requireEditor, async (request, response, next) => {
+  try {
+    const params = idParamSchema.parse(request.params);
+    const body = reorderChannelsSchema.parse(request.body);
+    const product = await prisma.$transaction((tx) =>
+      reorderChannels(tx, params.productId, params.category!, body.channelIds),
+    );
+    response.json({ product: mapProduct(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/products/:productId/categories/:category/channels/:channelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = updateChannelSchema.parse(request.body);
 
-    const channel = await prisma.channel.findFirst({
-      where: {
-        id: params.channelId,
-        productId: params.productId,
-      },
-      select: { id: true },
-    });
+    const categoryState = (await getProductGraphOrThrow(prisma, params.productId)).categories.find(
+      (entry) => entry.category === params.category,
+    );
 
+    const channel = categoryState?.channels.find((entry) => entry.id === params.channelId);
     if (!channel) {
       throw new AppError('Channel not found', 404);
     }
 
-    await prisma.channel.update({
+    await prisma.productChannel.update({
       where: { id: params.channelId },
       data: { name: body.name },
     });
@@ -524,50 +507,50 @@ app.patch('/api/products/:productId/channels/:channelId', requireEditor, async (
   }
 });
 
-app.delete('/api/products/:productId/channels/:channelId', requireEditor, async (request, response, next) => {
+app.delete('/api/products/:productId/categories/:category/channels/:channelId', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
-    const product = await prisma.$transaction((tx) => deleteChannel(tx, params.productId, params.channelId!));
+    const product = await prisma.$transaction((tx) =>
+      deleteChannel(tx, params.productId, params.category!, params.channelId!),
+    );
     response.json({ product: mapProduct(product) });
   } catch (error) {
     next(error);
   }
 });
 
-app.get('/api/products/:productId/input-values', requireAuthenticated, async (request, response, next) => {
+app.get('/api/products/:productId/categories/:category/input-values', requireAuthenticated, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
-    const product = await prisma.product.findUnique({
-      where: { id: params.productId },
-      select: { id: true },
-    });
+    const categoryState = (await getProductGraphOrThrow(prisma, params.productId)).categories.find(
+      (entry) => entry.category === params.category,
+    );
 
-    if (!product) {
-      throw new AppError('Product not found', 404);
+    if (!categoryState) {
+      throw new AppError('Category not found', 404);
     }
 
-    const category = request.query.category;
-    const parsedCategory =
-      typeof category === 'string'
-        ? idParamSchema.parse({ category }).category
+    const weekStartDate =
+      typeof request.query.weekStartDate === 'string'
+        ? dateKeySchema.parse(request.query.weekStartDate)
         : undefined;
 
-    const inputValues = await prisma.inputValue.findMany({
+    const inputValues = await prisma.weeklyInputValue.findMany({
       where: {
-        productId: params.productId,
-        category: parsedCategory,
+        categoryStateId: categoryState.id,
+        ...(weekStartDate ? { weekStartDate: parseDateKey(weekStartDate) } : {}),
       },
       orderBy: [
-        { category: 'asc' },
+        { weekStartDate: 'asc' },
         { funnel: { position: 'asc' } },
         { channel: { position: 'asc' } },
       ],
       select: {
         id: true,
-        productId: true,
+        categoryStateId: true,
         funnelId: true,
         channelId: true,
-        category: true,
+        weekStartDate: true,
         visits: true,
         revenue: true,
         createdAt: true,
@@ -575,14 +558,19 @@ app.get('/api/products/:productId/input-values', requireAuthenticated, async (re
       },
     });
 
-    response.json({ inputValues });
+    response.json({
+      inputValues: inputValues.map((row) => ({
+        ...row,
+        weekStartDate: row.weekStartDate.toISOString().slice(0, 10),
+      })),
+    });
   } catch (error) {
     next(error);
   }
 });
 
 app.patch(
-  '/api/products/:productId/input-values/:category/:funnelId/:channelId',
+  '/api/products/:productId/categories/:category/input-values/:weekStartDate/:funnelId/:channelId',
   requireEditor,
   async (request, response, next) => {
     try {
@@ -590,8 +578,14 @@ app.patch(
       const body = updateInputValueSchema.parse(request.body);
 
       const productGraph = await getProductGraphOrThrow(prisma, params.productId);
-      const funnelExists = productGraph.funnels.some((funnel) => funnel.id === params.funnelId);
-      const channelExists = productGraph.channels.some((channel) => channel.id === params.channelId);
+      const categoryState = productGraph.categories.find((entry) => entry.category === params.category);
+
+      if (!categoryState) {
+        throw new AppError('Category not found', 404);
+      }
+
+      const funnelExists = categoryState.funnels.some((funnel) => funnel.id === params.funnelId);
+      const channelExists = categoryState.channels.some((channel) => channel.id === params.channelId);
 
       if (!funnelExists) {
         throw new AppError('Funnel not found', 404);
@@ -601,27 +595,27 @@ app.patch(
         throw new AppError('Channel not found', 404);
       }
 
-      const existing = productGraph.inputValues.find(
+      const existing = categoryState.weeklyInputs.find(
         (row) =>
-          row.category === params.category &&
           row.funnelId === params.funnelId &&
-          row.channelId === params.channelId,
+          row.channelId === params.channelId &&
+          formatDateKey(row.weekStartDate) === params.weekStartDate,
       );
 
-      await prisma.inputValue.upsert({
+      await prisma.weeklyInputValue.upsert({
         where: {
-          productId_category_funnelId_channelId: {
-            productId: params.productId,
-            category: params.category!,
+          categoryStateId_funnelId_channelId_weekStartDate: {
+            categoryStateId: categoryState.id,
             funnelId: params.funnelId!,
             channelId: params.channelId!,
+            weekStartDate: parseDateKey(params.weekStartDate!),
           },
         },
         create: {
-          productId: params.productId,
-          category: params.category!,
+          categoryStateId: categoryState.id,
           funnelId: params.funnelId!,
           channelId: params.channelId!,
+          weekStartDate: parseDateKey(params.weekStartDate!),
           visits: body.visits ?? existing?.visits ?? 0,
           revenue: body.revenue ?? existing?.revenue ?? 0,
         },
@@ -639,57 +633,57 @@ app.patch(
   },
 );
 
-app.put('/api/products/:productId/input-values/bulk', requireEditor, async (request, response, next) => {
+app.put('/api/products/:productId/categories/:category/input-values/bulk', requireEditor, async (request, response, next) => {
   try {
     const params = idParamSchema.parse(request.params);
     const body = bulkInputValuesSchema.parse(request.body);
 
     const product = await prisma.$transaction(async (tx) => {
       const productGraph = await getProductGraphOrThrow(tx, params.productId);
-      const funnelIds = new Set(productGraph.funnels.map((funnel) => funnel.id));
-      const channelIds = new Set(productGraph.channels.map((channel) => channel.id));
+      const categoryState = productGraph.categories.find((entry) => entry.category === params.category);
+
+      if (!categoryState) {
+        throw new AppError('Category not found', 404);
+      }
+
+      const funnelIds = new Set(categoryState.funnels.map((funnel) => funnel.id));
+      const channelIds = new Set(categoryState.channels.map((channel) => channel.id));
       const upserts = [];
 
-      for (const [category, funnelMap] of Object.entries(body.data)) {
-        if (!funnelMap) {
-          continue;
+      for (const [funnelId, channelMap] of Object.entries(body.data)) {
+        if (!funnelIds.has(funnelId)) {
+          throw new AppError(`Unknown funnel: ${funnelId}`, 400);
         }
 
-        for (const [funnelId, channelMap] of Object.entries(funnelMap)) {
-          if (!funnelIds.has(funnelId)) {
-            throw new AppError(`Unknown funnel: ${funnelId}`, 400);
+        for (const [channelId, cell] of Object.entries(channelMap)) {
+          if (!channelIds.has(channelId)) {
+            throw new AppError(`Unknown channel: ${channelId}`, 400);
           }
 
-          for (const [channelId, cell] of Object.entries(channelMap)) {
-            if (!channelIds.has(channelId)) {
-              throw new AppError(`Unknown channel: ${channelId}`, 400);
-            }
-
-            upserts.push(
-              tx.inputValue.upsert({
-                where: {
-                  productId_category_funnelId_channelId: {
-                    productId: params.productId,
-                    category: category as 'newChannels' | 'existingChannels',
-                    funnelId,
-                    channelId,
-                  },
-                },
-                create: {
-                  productId: params.productId,
-                  category: category as 'newChannels' | 'existingChannels',
+          upserts.push(
+            tx.weeklyInputValue.upsert({
+              where: {
+                categoryStateId_funnelId_channelId_weekStartDate: {
+                  categoryStateId: categoryState.id,
                   funnelId,
                   channelId,
-                  visits: cell.visits,
-                  revenue: cell.revenue,
+                  weekStartDate: parseDateKey(body.weekStartDate),
                 },
-                update: {
-                  visits: cell.visits,
-                  revenue: cell.revenue,
-                },
-              }),
-            );
-          }
+              },
+              create: {
+                categoryStateId: categoryState.id,
+                funnelId,
+                channelId,
+                weekStartDate: parseDateKey(body.weekStartDate),
+                visits: cell.visits,
+                revenue: cell.revenue,
+              },
+              update: {
+                visits: cell.visits,
+                revenue: cell.revenue,
+              },
+            }),
+          );
         }
       }
 
@@ -718,7 +712,11 @@ app.post('/api/backup/import', requireEditor, async (request, response, next) =>
     await prisma.$transaction((tx) => restoreBackup(tx, body));
 
     const [products, targets] = await Promise.all([
-      Promise.all((await listProductSummaries(prisma)).map(async (product) => mapProduct(await getProductGraphOrThrow(prisma, product.id)))),
+      Promise.all(
+        (await listProductSummaries(prisma)).map(async (product) =>
+          mapProduct(await getProductGraphOrThrow(prisma, product.id)),
+        ),
+      ),
       ensureDashboardTargets(prisma),
     ]);
 
